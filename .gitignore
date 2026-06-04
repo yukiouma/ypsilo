@@ -1,0 +1,34 @@
+# Build artifacts
+target/
+
+# Claude Code
+.claude/
+
+# Cargo.lock
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+*.pdb
+*.dSYM/
+
+# Temp
+*.tmp
+*.temp
+
+# Mock Data
+.mock_data/
