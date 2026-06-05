@@ -44,8 +44,8 @@ als-resolver/src/
 Modify `Cargo.toml` to add under `[workspace.dependencies]`:
 
 ```toml
-quick-xml = "0.37"
-thiserror = "2.0"
+quick-xml = "0.40.1"
+thiserror = "2.0.18"
 ```
 
 - [ ] **Step 2: Add als-resolver dependencies**
