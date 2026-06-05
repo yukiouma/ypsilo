@@ -8,7 +8,7 @@
 
 ## Overview
 
-Implement a feature in `crates/als-resolver` that parses a Medidata Rave EDC ALS (Excel XML) file into `Vec<CRFForm>` from `crates/entities`.
+Implement a feature in `crates/als-resolver` that parses a Medidata Rave EDC ALS (Excel XML) file into `Vec<CRFForm>` and `Vec<Visit>` from `crates/entities`.
 
 ---
 
@@ -18,7 +18,7 @@ Implement a feature in `crates/als-resolver` that parses a Medidata Rave EDC ALS
 
 ```
 als-resolver/src/
-├── lib.rs              # Public API: parse_rave_als(path) -> Vec<CRFForm>
+├── lib.rs              # Public API: parse_rave_als(path) -> (Vec<CRFForm>, Vec<Visit>)
 ├── error.rs            # AlsParseError
 ├── traits.rs           # AlsParser trait
 ├── rave.rs             # pub mod parser, context, worksheet, crf_draft, forms, fields, folders, data_dictionary, matrices
@@ -31,7 +31,7 @@ als-resolver/src/
     ├── fields.rs       # Fields parsing + DataDictionary resolution
     ├── folders.rs      # Folders parsing
     ├── data_dictionary.rs  # DataDictionaries + DataDictionaryEntries
-    └── matrices.rs     # Matrices parsing
+    └── matrices.rs     # Matrices + Matrix sheets parsing (Visit extraction)
 ```
 
 ### Key Design Decisions
@@ -49,14 +49,23 @@ als-resolver/src/
 ```rust
 // traits.rs
 pub trait AlsParser {
-    fn parse(path: &Path) -> Result<Vec<CRFForm>, AlsParseError>;
+    fn parse(source: impl Read + 'static) -> Result<(Vec<CRFForm>, Vec<Visit>), AlsParseError>;
 }
 
 // lib.rs
-pub fn parse_rave_als(path: &Path) -> Result<Vec<CRFForm>, AlsParseError> {
-    rave::parser::RaveParser.parse(path)
+pub fn parse_rave_als(path: &Path) -> Result<(Vec<CRFForm>, Vec<Visit>), AlsParseError> {
+    let file = File::open(path).map_err(|e| AlsParseError::IoError(e.to_string()))?;
+    RaveParser.parse(file)
+}
+
+pub fn parse_rave_als_stream(input: impl Read + 'static) -> Result<(Vec<CRFForm>, Vec<Visit>), AlsParseError> {
+    RaveParser.parse(input)
 }
 ```
+
+**Returns:** Tuple of `(Vec<CRFForm>, Vec<Visit>)`
+- `Vec<CRFForm>` — parsed forms with items
+- `Vec<Visit>` — parsed visits with form bindings from Matrix sheets
 
 ---
 
@@ -91,11 +100,18 @@ pub fn parse_rave_als(path: &Path) -> Result<Vec<CRFForm>, AlsParseError> {
 2. Parse folder structure (for potential future domain derivation)
 3. Store for reference
 
-### Phase 5: Parse Matrices
+### Phase 5: Parse Visits (Matrices + Matrix sheets)
 
 1. Navigate to `Matrices` worksheet
-2. For each Matrix row, parse structure
-3. (Matrix sheets content not parsed — items stay within Forms)
+2. For each Matrix row, create `Visit { code: OID, name: MatrixName, order: Ordinal (or index), forms: Vec::new() }`
+3. For each Matrix sheet (e.g., `Matrix1#C1`, `Matrix2#C11`):
+   - Parse the sheet to extract form OIDs bound to this visit
+   - Each row in a Matrix sheet represents a form-field mapping
+   - Extract form OID from the row data (the "Matrix: {OID}" column or similar)
+   - Add form OIDs to the corresponding Visit's `forms` field
+4. Return `Vec<Visit>` alongside `Vec<CRFForm>`
+
+**Note:** Matrix sheets encode repeating form structure. Parsing extracts which forms are bound to which visit windows (C1, C2, ... C41 columns per cycle).
 
 ---
 
@@ -131,8 +147,8 @@ pub fn parse_rave_als(path: &Path) -> Result<Vec<CRFForm>, AlsParseError> {
 
 | CRFForm field | Source |
 |---------------|--------|
-| `name` | Forms.DraftFormName |
-| `description` | "" (empty) |
+| `name` | Forms.OID |
+| `description` | Forms.DraftFormName |
 | `order` | Forms.Ordinal → i32 |
 | `items` | Fields rows (grouped by FormOID) |
 | `domains` | Vec::new() |
@@ -171,6 +187,7 @@ pub fn parse_rave_als(path: &Path) -> Result<Vec<CRFForm>, AlsParseError> {
 - **Fail fast** — first error stops parsing, returns `AlsParseError`
 - `AlsParseError` variants:
   - `FileNotFound(String)` — path doesn't exist
+  - `IoError(String)` — file read or stream error
   - `XmlError(String)` — quick-xml parsing error
   - `WorksheetNotFound(String)` — required sheet missing
   - `MissingRequiredField(String)` — OID, Ordinal, etc. missing
@@ -218,4 +235,8 @@ Add to workspace `Cargo.toml` under `[workspace.dependencies]`:
 ### Modified files
 - `crates/als-resolver/src/lib.rs` — add public API
 - `crates/als-resolver/Cargo.toml` — add dependencies
+- `crates/entities/src/lib.rs` — add `pub mod visit;`
 - `Cargo.toml` — add workspace dependencies
+
+### Dependencies on entities
+- `crates/entities` — als-resolver depends on entities for `CRFForm`, `Visit` types
