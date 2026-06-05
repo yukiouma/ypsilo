@@ -1,10 +1,11 @@
 use quick_xml::events::Event;
+use quick_xml::escape::unescape;
 use quick_xml::Reader;
 use crate::error::AlsParseError;
 use crate::rave::context::{DataDictionaryEntry, ParseContext};
 
 /// Parse DataDictionaries and DataDictionaryEntries worksheets.
-pub fn parse_data_dictionaries<R: std::io::Read>(
+pub fn parse_data_dictionaries<R: std::io::BufRead>(
     reader: &mut Reader<R>,
     context: &mut ParseContext,
 ) -> Result<(), AlsParseError> {
@@ -13,7 +14,7 @@ pub fn parse_data_dictionaries<R: std::io::Read>(
 }
 
 /// Parse DataDictionaryEntries worksheet into context
-fn parse_dictionary_entries<R: std::io::Read>(
+fn parse_dictionary_entries<R: std::io::BufRead>(
     reader: &mut Reader<R>,
     context: &mut ParseContext,
 ) -> Result<(), AlsParseError> {
@@ -32,7 +33,8 @@ fn parse_dictionary_entries<R: std::io::Read>(
                 in_entry = false;
             }
             Ok(Event::Text(e)) if in_entry => {
-                let text = e.unescape().map_err(|e| AlsParseError::XmlError(e.to_string()))?;
+                let decoded = e.decode().map_err(|e| AlsParseError::XmlError(e.to_string()))?;
+                let text = unescape(&decoded).map_err(|e| AlsParseError::XmlError(e.to_string()))?;
                 // Parse tab-separated row data
                 let fields: Vec<&str> = text.split('\t').collect();
                 if fields.len() >= 4 {
@@ -41,7 +43,7 @@ fn parse_dictionary_entries<R: std::io::Read>(
                     let coded_data = fields[1].to_string();
                     let ordinal = fields[2].parse::<i32>().unwrap_or(0);
                     let user_data_string = fields[3].to_string();
-                    let specify = fields.get(4).map(|s| s == "TRUE").unwrap_or(false);
+                    let specify = fields.get(4).map(|s| *s == "TRUE").unwrap_or(false);
 
                     context.add_dictionary_entry(DataDictionaryEntry {
                         dictionary_name,

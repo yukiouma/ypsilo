@@ -12,7 +12,7 @@ use std::path::Path;
 
 /// Parse a Rave ALS file from a path.
 pub fn parse_rave_als(path: &Path) -> Result<Project, AlsParseError> {
-    let file = File::open(path).map_err(|e| AlsParseError::IoError(e.to_string()))?;
+    let file = File::open(path).map_err(AlsParseError::IoError)?;
     parse_rave_als_stream(file)
 }
 

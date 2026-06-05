@@ -1,4 +1,5 @@
 use thiserror::Error;
+use std::io;
 
 #[derive(Debug, Error)]
 pub enum AlsParseError {
@@ -6,7 +7,7 @@ pub enum AlsParseError {
     FileNotFound(String),
 
     #[error("I/O error: {0}")]
-    IoError(String),
+    IoError(#[from] io::Error),
 
     #[error("XML error: {0}")]
     XmlError(String),

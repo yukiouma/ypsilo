@@ -1,31 +1,32 @@
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use crate::error::AlsParseError;
+use std::io::BufRead;
 
 /// Navigates to a specific worksheet in the Excel SSXML format.
-pub struct WorksheetNavigator<R: std::io::Read> {
-    reader: Reader<R>,
+pub struct WorksheetNavigator<R: BufRead> {
+    source: R,
     buffer: Vec<u8>,
 }
 
-impl<R: std::io::Read> WorksheetNavigator<R> {
-    pub fn new(reader: Reader<R>) -> Self {
+impl<R: BufRead> WorksheetNavigator<R> {
+    pub fn new(source: R) -> Self {
         Self {
-            reader,
+            source,
             buffer: Vec::new(),
         }
     }
 
     /// Navigate to a worksheet by name. Returns position byte offset.
     pub fn find_worksheet(&mut self, name: &str) -> Result<usize, AlsParseError> {
-        // Reset to beginning
-        self.reader.reset();
+        // Recreate reader from source to reset position
+        let mut reader = Reader::from_reader(&mut self.source);
         self.buffer.clear();
 
         let mut bytes_read = 0;
         loop {
             self.buffer.clear();
-            match self.reader.read_event_into(&mut self.buffer) {
+            match reader.read_event_into(&mut self.buffer) {
                 Ok(Event::Eof) => break,
                 Ok(Event::Start(e)) if e.name().as_ref() == b"Worksheet" => {
                     // Check ss:Name attribute
@@ -45,11 +46,6 @@ impl<R: std::io::Read> WorksheetNavigator<R> {
 
         Err(AlsParseError::WorksheetNotFound(name.to_string()))
     }
-
-    /// Get a reference to the underlying reader
-    pub fn reader(&self) -> &Reader<R> {
-        &self.reader
-    }
 }
 
 #[cfg(test)]
@@ -66,8 +62,7 @@ mod tests {
   </Worksheet>
 </Workbook>"#;
         let cursor = Cursor::new(xml);
-        let reader = Reader::from_reader(cursor);
-        let mut nav = WorksheetNavigator::new(reader);
+        let mut nav = WorksheetNavigator::new(cursor);
         let pos = nav.find_worksheet("Forms").unwrap();
         assert!(pos > 0);
     }
@@ -81,8 +76,7 @@ mod tests {
   </Worksheet>
 </Workbook>"#;
         let cursor = Cursor::new(xml);
-        let reader = Reader::from_reader(cursor);
-        let mut nav = WorksheetNavigator::new(reader);
+        let mut nav = WorksheetNavigator::new(cursor);
         let result = nav.find_worksheet("NonExistent");
         assert!(matches!(result, Err(AlsParseError::WorksheetNotFound(_))));
     }

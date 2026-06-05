@@ -1,11 +1,12 @@
 use quick_xml::events::Event;
+use quick_xml::escape::unescape;
 use quick_xml::Reader;
 use crate::error::AlsParseError;
 use crate::rave::context::ParseContext;
 use entities::project::{CRFItem, ControlType};
 
 /// Parse the Fields worksheet and populate form items.
-pub fn parse_fields<R: std::io::Read>(
+pub fn parse_fields<R: std::io::BufRead>(
     reader: &mut Reader<R>,
     context: &mut ParseContext,
 ) -> Result<(), AlsParseError> {
@@ -110,7 +111,8 @@ pub fn parse_fields<R: std::io::Read>(
             }
             Ok(Event::Text(e)) => {
                 if in_data_cell {
-                    let text = e.unescape().map_err(|e| AlsParseError::XmlError(e.to_string()))?;
+                    let decoded = e.decode().map_err(|e| AlsParseError::XmlError(e.to_string()))?;
+                    let text = unescape(&decoded).map_err(|e| AlsParseError::XmlError(e.to_string()))?;
                     current_row.push(text.to_string());
                 }
             }

@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{BufRead, Read};
 use quick_xml::Reader;
 use crate::error::AlsParseError;
 use crate::traits::AlsParser;
@@ -13,21 +13,28 @@ use entities::project::Project;
 pub struct RaveParser;
 
 impl AlsParser for RaveParser {
-    fn parse(self, source: impl Read + 'static) -> Result<Project, AlsParseError> {
+    fn parse(self, mut source: impl Read + 'static) -> Result<Project, AlsParseError> {
         let mut context = ParseContext::new();
-        let mut reader = Reader::from_reader(source);
-        reader.config_mut().trim_text(true);
+        // Read entire source into memory to allow multiple passes
+        let mut bytes = Vec::new();
+        source.read_to_end(&mut bytes)?;
 
         // Phase 1: Load DataDictionaries
         // Navigate to DataDictionaryEntries worksheet
+        let mut reader = Reader::from_reader(bytes.as_slice());
+        reader.config_mut().trim_text(true);
         navigate_to_worksheet(&mut reader, "DataDictionaryEntries")?;
         parse_data_dictionaries(&mut reader, &mut context)?;
 
         // Phase 2: Parse Forms
+        reader = Reader::from_reader(bytes.as_slice());
+        reader.config_mut().trim_text(true);
         navigate_to_worksheet(&mut reader, "Forms")?;
         parse_forms(&mut reader, &mut context)?;
 
         // Phase 3: Parse Fields
+        reader = Reader::from_reader(bytes.as_slice());
+        reader.config_mut().trim_text(true);
         navigate_to_worksheet(&mut reader, "Fields")?;
         parse_fields(&mut reader, &mut context)?;
 
@@ -35,6 +42,8 @@ impl AlsParser for RaveParser {
         // navigate_to_worksheet(&mut reader, "Folders")?;
 
         // Phase 5: Parse Matrices
+        reader = Reader::from_reader(bytes.as_slice());
+        reader.config_mut().trim_text(true);
         navigate_to_worksheet(&mut reader, "Matrices")?;
         parse_matrices(&mut reader, &mut context)?;
 
@@ -47,7 +56,7 @@ impl AlsParser for RaveParser {
 }
 
 /// Navigate to a worksheet by name.
-fn navigate_to_worksheet<R: Read>(
+fn navigate_to_worksheet<R: BufRead>(
     reader: &mut Reader<R>,
     worksheet_name: &str,
 ) -> Result<(), AlsParseError> {

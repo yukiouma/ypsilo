@@ -1,11 +1,12 @@
 use quick_xml::events::Event;
+use quick_xml::escape::unescape;
 use quick_xml::Reader;
 use crate::error::AlsParseError;
 use crate::rave::context::ParseContext;
 use entities::project::Visit;
 
 /// Parse Matrices worksheet and Matrix sheets to extract visits.
-pub fn parse_matrices<R: std::io::Read>(
+pub fn parse_matrices<R: std::io::BufRead>(
     reader: &mut Reader<R>,
     context: &mut ParseContext,
 ) -> Result<(), AlsParseError> {
@@ -57,7 +58,8 @@ pub fn parse_matrices<R: std::io::Read>(
             }
             Ok(Event::Text(e)) => {
                 if in_data_cell {
-                    let text = e.unescape().map_err(|e| AlsParseError::XmlError(e.to_string()))?;
+                    let decoded = e.decode().map_err(|e| AlsParseError::XmlError(e.to_string()))?;
+                    let text = unescape(&decoded).map_err(|e| AlsParseError::XmlError(e.to_string()))?;
                     current_row.push(text.to_string());
                 }
             }
@@ -71,7 +73,7 @@ pub fn parse_matrices<R: std::io::Read>(
 
 /// Parse a Matrix sheet (e.g., Matrix1#C1) to extract form bindings.
 /// This extracts form OIDs from the first column ("Matrix: {OID}").
-pub fn parse_matrix_sheet<R: std::io::Read>(
+pub fn parse_matrix_sheet<R: std::io::BufRead>(
     reader: &mut Reader<R>,
     visit_code: &str,
     context: &mut ParseContext,
@@ -119,7 +121,8 @@ pub fn parse_matrix_sheet<R: std::io::Read>(
             }
             Ok(Event::Text(e)) => {
                 if in_data_cell {
-                    let text = e.unescape().map_err(|e| AlsParseError::XmlError(e.to_string()))?;
+                    let decoded = e.decode().map_err(|e| AlsParseError::XmlError(e.to_string()))?;
+                    let text = unescape(&decoded).map_err(|e| AlsParseError::XmlError(e.to_string()))?;
                     current_row.push(text.to_string());
                 }
             }
