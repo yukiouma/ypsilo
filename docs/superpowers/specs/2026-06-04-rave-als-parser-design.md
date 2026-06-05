@@ -8,7 +8,7 @@
 
 ## Overview
 
-Implement a feature in `crates/als-resolver` that parses a Medidata Rave EDC ALS (Excel XML) file into `Vec<CRFForm>` and `Vec<Visit>` from `crates/entities`.
+Implement a feature in `crates/als-resolver` that parses a Medidata Rave EDC ALS (Excel XML) file into `Project` from `crates/entities`.
 
 ---
 
@@ -18,7 +18,7 @@ Implement a feature in `crates/als-resolver` that parses a Medidata Rave EDC ALS
 
 ```
 als-resolver/src/
-├── lib.rs              # Public API: parse_rave_als(path) -> (Vec<CRFForm>, Vec<Visit>)
+├── lib.rs              # Public API: parse_rave_als(path) -> Project
 ├── error.rs            # AlsParseError
 ├── traits.rs           # AlsParser trait
 ├── rave.rs             # pub mod parser, context, worksheet, crf_draft, forms, fields, folders, data_dictionary, matrices
@@ -49,23 +49,23 @@ als-resolver/src/
 ```rust
 // traits.rs
 pub trait AlsParser {
-    fn parse(source: impl Read + 'static) -> Result<(Vec<CRFForm>, Vec<Visit>), AlsParseError>;
+    fn parse(source: impl Read + 'static) -> Result<Project, AlsParseError>;
 }
 
 // lib.rs
-pub fn parse_rave_als(path: &Path) -> Result<(Vec<CRFForm>, Vec<Visit>), AlsParseError> {
+pub fn parse_rave_als(path: &Path) -> Result<Project, AlsParseError> {
     let file = File::open(path).map_err(|e| AlsParseError::IoError(e.to_string()))?;
     RaveParser.parse(file)
 }
 
-pub fn parse_rave_als_stream(input: impl Read + 'static) -> Result<(Vec<CRFForm>, Vec<Visit>), AlsParseError> {
+pub fn parse_rave_als_stream(input: impl Read + 'static) -> Result<Project, AlsParseError> {
     RaveParser.parse(input)
 }
 ```
 
-**Returns:** Tuple of `(Vec<CRFForm>, Vec<Visit>)`
-- `Vec<CRFForm>` — parsed forms with items
-- `Vec<Visit>` — parsed visits with form bindings from Matrix sheets
+**Returns:** `Project` containing:
+- `forms: Vec<CRFForm>` — parsed forms with items
+- `visit: Vec<Visit>` — parsed visits with form bindings from Matrix sheets
 
 ---
 
@@ -235,8 +235,8 @@ Add to workspace `Cargo.toml` under `[workspace.dependencies]`:
 ### Modified files
 - `crates/als-resolver/src/lib.rs` — add public API
 - `crates/als-resolver/Cargo.toml` — add dependencies
-- `crates/entities/src/lib.rs` — add `pub mod visit;`
+- `crates/entities/src/lib.rs` — update to `pub mod project;`
 - `Cargo.toml` — add workspace dependencies
 
 ### Dependencies on entities
-- `crates/entities` — als-resolver depends on entities for `CRFForm`, `Visit` types
+- `crates/entities` — als-resolver depends on entities for `Project`, `CRFForm`, `Visit` types (all in project.rs)
