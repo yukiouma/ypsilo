@@ -63,6 +63,7 @@ pub struct Domain {
     pub description: String,
 }
 
+#[derive(Debug)]
 pub struct Visit {
     pub code: String,
     pub name: String,
@@ -71,6 +72,7 @@ pub struct Visit {
     pub forms: Vec<String>,
 }
 
+#[derive(Debug)]
 pub struct Project {
     pub forms: Vec<CRFForm>,
     pub visit: Vec<Visit>,

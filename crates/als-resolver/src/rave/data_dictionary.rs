@@ -1,8 +1,8 @@
-use quick_xml::events::Event;
-use quick_xml::escape::unescape;
-use quick_xml::Reader;
 use crate::error::AlsParseError;
 use crate::rave::context::{DataDictionaryEntry, ParseContext};
+use quick_xml::Reader;
+use quick_xml::escape::unescape;
+use quick_xml::events::Event;
 
 /// Parse DataDictionaries and DataDictionaryEntries worksheets.
 pub fn parse_data_dictionaries<R: std::io::BufRead>(
@@ -13,7 +13,7 @@ pub fn parse_data_dictionaries<R: std::io::BufRead>(
     parse_dictionary_entries(reader, context)
 }
 
-/// Parse DataDictionaryEntries worksheet into context
+/// Parse DataDictionaryEntries worksheet into context (stop at worksheet boundary)
 fn parse_dictionary_entries<R: std::io::BufRead>(
     reader: &mut Reader<R>,
     context: &mut ParseContext,
@@ -25,6 +25,10 @@ fn parse_dictionary_entries<R: std::io::BufRead>(
         buffer.clear();
         match reader.read_event_into(&mut buffer) {
             Ok(Event::Eof) => break,
+            Ok(Event::End(e)) if e.name().as_ref() == b"Worksheet" => {
+                // We've reached the end of the DataDictionaryEntries worksheet
+                break;
+            }
             Ok(Event::Start(e)) if e.name().as_ref() == b"Row" => {
                 // Start of a row - could be header or data
                 in_entry = true;
@@ -33,8 +37,11 @@ fn parse_dictionary_entries<R: std::io::BufRead>(
                 in_entry = false;
             }
             Ok(Event::Text(e)) if in_entry => {
-                let decoded = e.decode().map_err(|e| AlsParseError::XmlError(e.to_string()))?;
-                let text = unescape(&decoded).map_err(|e| AlsParseError::XmlError(e.to_string()))?;
+                let decoded = e
+                    .decode()
+                    .map_err(|e| AlsParseError::XmlError(e.to_string()))?;
+                let text =
+                    unescape(&decoded).map_err(|e| AlsParseError::XmlError(e.to_string()))?;
                 // Parse tab-separated row data
                 let fields: Vec<&str> = text.split('\t').collect();
                 if fields.len() >= 4 {

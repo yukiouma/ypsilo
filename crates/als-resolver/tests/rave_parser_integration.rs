@@ -3,7 +3,7 @@ use std::path::Path;
 
 #[test]
 fn test_parse_rave_als_integration() {
-    let path = Path::new(".mock_data/als/rave.xml");
+    let path = Path::new("../../.mock_data/als/rave.xml");
     if !path.exists() {
         eprintln!("Skipping integration test - .mock_data/als/rave.xml not found");
         return;
@@ -13,22 +13,33 @@ fn test_parse_rave_als_integration() {
     assert!(result.is_ok(), "parse_rave_als should succeed");
 
     let project = result.unwrap();
-    assert!(!project.forms.is_empty(), "Project should have at least one form");
-    assert!(!project.visit.is_empty(), "Project should have at least one visit");
+    assert!(
+        !project.forms.is_empty(),
+        "Project should have at least one form"
+    );
+    assert!(
+        !project.visit.is_empty(),
+        "Project should have at least one visit"
+    );
 
     // Check first form structure
     let first_form = &project.forms[0];
     assert!(!first_form.name.is_empty(), "Form name should not be empty");
-    assert!(!first_form.description.is_empty(), "Form description should not be empty");
+    assert!(
+        !first_form.description.is_empty(),
+        "Form description should not be empty"
+    );
 
-    println!("Parsed {} forms and {} visits",
+    println!(
+        "Parsed {} forms and {} visits",
         project.forms.len(),
-        project.visit.len());
+        project.visit.len()
+    );
 }
 
 #[test]
 fn test_parse_rave_als_with_file() {
-    let path = Path::new(".mock_data/als/rave.xml");
+    let path = Path::new("../../.mock_data/als/rave.xml");
     if !path.exists() {
         eprintln!("Skipping - mock data not found");
         return;

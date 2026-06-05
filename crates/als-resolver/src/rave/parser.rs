@@ -1,13 +1,14 @@
-use std::io::{BufRead, Read};
-use quick_xml::Reader;
 use crate::error::AlsParseError;
-use crate::traits::AlsParser;
 use crate::rave::context::ParseContext;
 use crate::rave::data_dictionary::parse_data_dictionaries;
-use crate::rave::forms::parse_forms;
 use crate::rave::fields::parse_fields;
+use crate::rave::forms::parse_forms;
 use crate::rave::matrices::parse_matrices;
+use crate::traits::AlsParser;
 use entities::project::Project;
+use quick_xml::Reader;
+use quick_xml::events::Event;
+use std::io::{BufRead, Read};
 
 /// Rave ALS parser implementation.
 pub struct RaveParser;
@@ -88,5 +89,3 @@ fn navigate_to_worksheet<R: BufRead>(
         }
     }
 }
-
-use quick_xml::events::Event;

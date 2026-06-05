@@ -5,7 +5,7 @@ use crate::error::AlsParseError;
 use crate::rave::context::ParseContext;
 use entities::project::Visit;
 
-/// Parse Matrices worksheet and Matrix sheets to extract visits.
+/// Parse Matrices worksheet only (stop at worksheet boundary).
 pub fn parse_matrices<R: std::io::BufRead>(
     reader: &mut Reader<R>,
     context: &mut ParseContext,
@@ -18,6 +18,10 @@ pub fn parse_matrices<R: std::io::BufRead>(
         buffer.clear();
         match reader.read_event_into(&mut buffer) {
             Ok(Event::Eof) => break,
+            Ok(Event::End(e)) if e.name().as_ref() == b"Worksheet" => {
+                // We've reached the end of the Matrices worksheet
+                break;
+            }
             Ok(Event::Start(e)) => {
                 match e.name().as_ref() {
                     b"Row" => {

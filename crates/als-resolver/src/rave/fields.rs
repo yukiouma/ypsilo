@@ -5,7 +5,7 @@ use crate::error::AlsParseError;
 use crate::rave::context::ParseContext;
 use entities::project::{CRFItem, ControlType};
 
-/// Parse the Fields worksheet and populate form items.
+/// Parse the Fields worksheet and populate form items (stop at worksheet boundary).
 pub fn parse_fields<R: std::io::BufRead>(
     reader: &mut Reader<R>,
     context: &mut ParseContext,
@@ -13,15 +13,35 @@ pub fn parse_fields<R: std::io::BufRead>(
     let mut buffer = Vec::new();
     let mut current_row: Vec<String> = Vec::new();
     let mut in_data_cell = false;
+    let mut current_cell_index = 0;
 
     loop {
         buffer.clear();
         match reader.read_event_into(&mut buffer) {
             Ok(Event::Eof) => break,
+            Ok(Event::End(e)) if e.name().as_ref() == b"Worksheet" => {
+                break;
+            }
             Ok(Event::Start(e)) => {
                 match e.name().as_ref() {
                     b"Row" => {
                         current_row.clear();
+                        current_cell_index = 0;
+                    }
+                    b"Cell" => {
+                        // Check for ss:Index attribute to handle skipped columns
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"ss:Index" {
+                                if let Ok(idx_str) = std::str::from_utf8(attr.value.as_ref()) {
+                                    if let Ok(idx) = idx_str.parse::<usize>() {
+                                        while current_row.len() < idx {
+                                            current_row.push(String::new());
+                                        }
+                                        current_cell_index = idx;
+                                    }
+                                }
+                            }
+                        }
                     }
                     b"Data" => {
                         in_data_cell = true;
@@ -36,7 +56,7 @@ pub fn parse_fields<R: std::io::BufRead>(
                         if current_row.len() >= 37 && current_row[0] != "FormOID" {
                             let form_oid = current_row[0].clone();
                             let field_oid = current_row[1].clone();
-                            let ordinal = current_row[2].parse::<i32>().unwrap_or(0);
+                            let _ordinal = current_row[2].parse::<i32>().unwrap_or(0);
                             let draft_field_name = current_row[4].clone();
                             let variable_oid = current_row[6].clone();
                             let data_format = current_row[7].clone();
@@ -113,7 +133,11 @@ pub fn parse_fields<R: std::io::BufRead>(
                 if in_data_cell {
                     let decoded = e.decode().map_err(|e| AlsParseError::XmlError(e.to_string()))?;
                     let text = unescape(&decoded).map_err(|e| AlsParseError::XmlError(e.to_string()))?;
-                    current_row.push(text.to_string());
+                    while current_row.len() <= current_cell_index {
+                        current_row.push(String::new());
+                    }
+                    current_row[current_cell_index] = text.to_string();
+                    current_cell_index += 1;
                 }
             }
             Ok(_) => {}
