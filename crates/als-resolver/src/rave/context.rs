@@ -1,5 +1,5 @@
+use entities::project::{CRFForm, ItemOption, Visit};
 use std::collections::HashMap;
-use entities::project::{CRFForm, Visit, ItemOption};
 
 /// Shared context during parsing. Accumulates data across phases.
 pub struct ParseContext {
@@ -17,6 +17,7 @@ pub struct ParseContext {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct DataDictionaryEntry {
     pub dictionary_name: String,
     pub coded_data: String,
@@ -26,6 +27,7 @@ pub struct DataDictionaryEntry {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FormRow {
     pub oid: String,
     pub ordinal: i32,

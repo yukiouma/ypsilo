@@ -4,11 +4,13 @@ use crate::error::AlsParseError;
 use std::io::BufRead;
 
 /// Navigates to a specific worksheet in the Excel SSXML format.
+#[allow(dead_code)]
 pub struct WorksheetNavigator<R: BufRead> {
     source: R,
     buffer: Vec<u8>,
 }
 
+#[allow(dead_code)]
 impl<R: BufRead> WorksheetNavigator<R> {
     pub fn new(source: R) -> Self {
         Self {
