@@ -3,7 +3,7 @@ use crate::rave::context::ParseContext;
 use crate::rave::data_dictionary::parse_data_dictionaries;
 use crate::rave::fields::parse_fields;
 use crate::rave::forms::parse_forms;
-use crate::rave::matrices::parse_matrices;
+use crate::rave::matrices::{parse_matrices, parse_matrix_master};
 use crate::traits::AlsParser;
 use entities::project::Project;
 use quick_xml::Reader;
@@ -42,11 +42,17 @@ impl AlsParser for RaveParser {
         // Phase 4: Parse Folders (placeholder - no-op for now)
         // navigate_to_worksheet(&mut reader, "Folders")?;
 
-        // Phase 5: Parse Matrices
+        // Phase 5: Parse Matrices (create Visit structs with empty forms)
         reader = Reader::from_reader(bytes.as_slice());
         reader.config_mut().trim_text(true);
         navigate_to_worksheet(&mut reader, "Matrices")?;
         parse_matrices(&mut reader, &mut context)?;
+
+        // Phase 6: Parse Matrix#MASTER to populate Visit.forms
+        reader = Reader::from_reader(bytes.as_slice());
+        reader.config_mut().trim_text(true);
+        navigate_to_worksheet(&mut reader, "Matrix121#MASTER")?;
+        parse_matrix_master(&mut reader, &mut context)?;
 
         // Build and return Project
         Ok(Project {
