@@ -93,7 +93,7 @@ pub fn parse_fields<R: std::io::BufRead>(
                             } else if !draft_field_name.is_empty() {
                                 draft_field_name
                             } else {
-                                variable_oid
+                                "".into()
                             };
 
                             let item_unit = if !fixed_unit.is_empty() {
@@ -113,7 +113,11 @@ pub fn parse_fields<R: std::io::BufRead>(
                                 format: data_format,
                                 control_type,
                                 item_unit,
-                                not_variable: None,
+                                not_variable: if variable_oid.is_empty() {
+                                    Some(true)
+                                } else {
+                                    None
+                                },
                             };
 
                             // Add item to the corresponding form
