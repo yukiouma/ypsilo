@@ -31,17 +31,29 @@ pub fn parse_matrix_master<R: std::io::BufRead>(
                         row_count += 1;
                     }
                     b"Cell" => {
+                        let mut found = false;
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"ss:Index" {
                                 if let Ok(idx_str) = std::str::from_utf8(attr.value.as_ref()) {
                                     if let Ok(idx) = idx_str.parse::<usize>() {
-                                        while current_row.len() < idx {
+                                        // ss:Index is 1-based, convert to 0-based for array index
+                                        let array_idx = idx.saturating_sub(1);
+                                        while current_row.len() < array_idx {
                                             current_row.push(String::new());
                                         }
-                                        current_cell_index = idx;
+                                        current_cell_index = array_idx;
+                                        found = true;
+                                        break;
                                     }
                                 }
                             }
+                        }
+                        if !found {
+                            // No ss:Index, use current position and increment for next
+                            while current_row.len() <= current_cell_index {
+                                current_row.push(String::new());
+                            }
+                            // Don't increment here - Text event will handle increment
                         }
                     }
                     b"Data" => {
@@ -54,8 +66,7 @@ pub fn parse_matrix_master<R: std::io::BufRead>(
                 match e.name().as_ref() {
                     b"Row" => {
                         if row_count == 1 {
-                            // Header row: "Matrix: MASTER", "Subject", "SCR", "C1", ...
-                            // Store visit codes (skip first 2 columns: Matrix: MASTER, Subject)
+                            // Header row
                             visit_codes.clear();
                             for (i, val) in current_row.iter().enumerate() {
                                 if i >= 2 && !val.is_empty() {
@@ -66,13 +77,11 @@ pub fn parse_matrix_master<R: std::io::BufRead>(
                             // Data row: first column is form OID, "X" marks bound visits
                             let form_oid = current_row[0].clone();
                             if !form_oid.is_empty() && form_oid != "Matrix: MASTER" && form_oid != "Subject" {
-                                // Check each cell for "X" marking
                                 for (col_idx, val) in current_row.iter().enumerate() {
                                     if col_idx >= 2 && val == "X" {
-                                        // This form is bound to visit at column col_idx
-                                        if col_idx < visit_codes.len() + 2 {
-                                            let visit_code = &visit_codes[col_idx - 2];
-                                            // Find the visit and add this form
+                                        let visit_idx = col_idx.saturating_sub(2);
+                                        if visit_idx < visit_codes.len() {
+                                            let visit_code = &visit_codes[visit_idx];
                                             if let Some(visit) = context.visits.iter_mut().find(|v| v.code == *visit_code) {
                                                 if !visit.forms.contains(&form_oid) {
                                                     visit.forms.push(form_oid.clone());
