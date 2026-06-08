@@ -1,9 +1,9 @@
-use quick_xml::events::Event;
-use quick_xml::escape::unescape;
-use quick_xml::Reader;
 use crate::error::AlsParseError;
 use crate::rave::context::ParseContext;
 use entities::project::{CRFItem, ControlType};
+use quick_xml::Reader;
+use quick_xml::escape::unescape;
+use quick_xml::events::Event;
 
 /// Parse the Fields worksheet and populate form items (stop at worksheet boundary).
 pub fn parse_fields<R: std::io::BufRead>(
@@ -37,7 +37,7 @@ pub fn parse_fields<R: std::io::BufRead>(
                                         while current_row.len() < idx {
                                             current_row.push(String::new());
                                         }
-                                        current_cell_index = idx;
+                                        current_cell_index = idx - 1;
                                     }
                                 }
                             }
@@ -131,8 +131,11 @@ pub fn parse_fields<R: std::io::BufRead>(
             }
             Ok(Event::Text(e)) => {
                 if in_data_cell {
-                    let decoded = e.decode().map_err(|e| AlsParseError::XmlError(e.to_string()))?;
-                    let text = unescape(&decoded).map_err(|e| AlsParseError::XmlError(e.to_string()))?;
+                    let decoded = e
+                        .decode()
+                        .map_err(|e| AlsParseError::XmlError(e.to_string()))?;
+                    let text =
+                        unescape(&decoded).map_err(|e| AlsParseError::XmlError(e.to_string()))?;
                     while current_row.len() <= current_cell_index {
                         current_row.push(String::new());
                     }
