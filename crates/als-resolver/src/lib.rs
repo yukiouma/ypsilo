@@ -1,6 +1,7 @@
 mod error;
 mod traits;
 mod rave;
+pub mod ecollect_v6;
 
 pub use error::AlsParseError;
 pub use traits::AlsParser;
