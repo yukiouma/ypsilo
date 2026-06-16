@@ -34,21 +34,21 @@ pub enum ControlType {
 }
 
 /// Item Option — selectable option within an item
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ItemOption {
     pub option_display: String,
     pub annotations: Vec<Annotation>,
 }
 
 /// Item Unit — unit label for an item
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ItemUnit {
     pub value: String,
     pub annotations: Vec<Annotation>,
 }
 
 /// Annotation — metadata attached to a form element
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Annotation {
     pub text: String,
     pub domain_name: Option<String>,
