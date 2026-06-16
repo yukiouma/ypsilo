@@ -9,17 +9,20 @@ use crate::traits::AlsParser;
 use entities::project::Project;
 use quick_xml::Reader;
 use quick_xml::events::Event;
+use std::fs::File;
 use std::io::{BufRead, Read};
+use std::path::Path;
 
 /// Rave ALS parser implementation.
 pub struct RaveParser;
 
 impl AlsParser for RaveParser {
-    fn parse(self, mut source: impl Read + 'static) -> Result<Project, AlsParseError> {
+    fn parse(&self, path: &Path) -> Result<Project, AlsParseError> {
         let mut context = ParseContext::new();
-        // Read entire source into memory to allow multiple passes
+        // Read entire file into memory to allow multiple passes
+        let mut file = File::open(path).map_err(AlsParseError::IoError)?;
         let mut bytes = Vec::new();
-        source.read_to_end(&mut bytes)?;
+        file.read_to_end(&mut bytes)?;
 
         // Phase 1: Load DataDictionaries
         // Navigate to DataDictionaryEntries worksheet
