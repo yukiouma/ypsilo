@@ -25,7 +25,7 @@ pub struct CRFItem {
 }
 
 /// Control type enum
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ControlType {
     TEXT,
     SELECTION,
