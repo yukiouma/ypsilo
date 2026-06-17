@@ -1,8 +1,9 @@
-use entities::project::{CRFForm, ItemOption, Visit};
+use entities::project::{CRFForm, ItemOption};
 use std::collections::HashMap;
 
 /// Internal item definition from Items worksheet.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ItemDef {
     pub oid: String,
     pub item_name: String,

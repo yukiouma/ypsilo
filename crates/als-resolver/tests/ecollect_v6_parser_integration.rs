@@ -11,15 +11,28 @@ fn test_parse_ecollect_v6_als_basic() {
     }
 
     let result = parse_ecollect_v6_als(path);
-    assert!(result.is_ok(), "parse_ecollect_v6_als should succeed, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "parse_ecollect_v6_als should succeed, got: {:?}",
+        result.err()
+    );
 
     let project = result.unwrap();
-    assert!(!project.forms.is_empty(), "Project should have at least one form");
-    assert!(!project.visit.is_empty(), "Project should have at least one visit");
+    assert!(
+        !project.forms.is_empty(),
+        "Project should have at least one form"
+    );
+    assert!(
+        !project.visit.is_empty(),
+        "Project should have at least one visit"
+    );
 
     let first_form = &project.forms[0];
     assert!(!first_form.name.is_empty(), "Form name should not be empty");
-    assert!(!first_form.description.is_empty(), "Form description should not be empty");
+    assert!(
+        !first_form.description.is_empty(),
+        "Form description should not be empty"
+    );
 
     println!(
         "Parsed {} forms and {} visits",
@@ -59,12 +72,11 @@ fn test_parse_ecollect_v6_als_visit_form_bindings() {
 
     let project = parse_ecollect_v6_als(path).unwrap();
 
-    let visits_with_forms = project
-        .visit
-        .iter()
-        .filter(|v| !v.forms.is_empty())
-        .count();
-    assert!(visits_with_forms > 0, "At least one visit should have form bindings");
+    let visits_with_forms = project.visit.iter().filter(|v| !v.forms.is_empty()).count();
+    assert!(
+        visits_with_forms > 0,
+        "At least one visit should have form bindings"
+    );
 
     for visit in &project.visit {
         assert!(!visit.code.is_empty(), "Visit code should not be empty");
@@ -88,12 +100,18 @@ fn test_parse_ecollect_v6_als_control_types() {
         .flat_map(|f| f.items.iter().map(|i| &i.control_type))
         .collect();
 
-    assert!(!control_types.is_empty(), "Should have at least one control type");
+    assert!(
+        !control_types.is_empty(),
+        "Should have at least one control type"
+    );
 
     use entities::project::ControlType;
     for ct in &control_types {
         match ct {
-            ControlType::TEXT | ControlType::SELECTION | ControlType::CHECKBOX | ControlType::DATETIME => {}
+            ControlType::TEXT
+            | ControlType::SELECTION
+            | ControlType::CHECKBOX
+            | ControlType::DATETIME => {}
         }
     }
 }
@@ -203,7 +221,9 @@ fn test_parse_ecollect_v6_als_debug_items() {
     for form in &project.forms {
         for item in &form.items {
             total_items += 1;
-            *control_types.entry(format!("{:?}", item.control_type)).or_insert(0) += 1;
+            *control_types
+                .entry(format!("{:?}", item.control_type))
+                .or_insert(0) += 1;
 
             if item.item_option.is_some() {
                 with_options += 1;
