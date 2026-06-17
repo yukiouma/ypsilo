@@ -1,11 +1,11 @@
-mod error;
-mod traits;
-mod rave;
 pub mod ecollect_v6;
+mod error;
+mod rave;
+mod traits;
 
+pub use entities::project::Project;
 pub use error::AlsParseError;
 pub use traits::AlsParser;
-pub use entities::project::Project;
 
 use std::path::Path;
 
