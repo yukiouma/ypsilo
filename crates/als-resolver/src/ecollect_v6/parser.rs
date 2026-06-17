@@ -1,8 +1,10 @@
-use crate::ecollect_v6::context::EcollectParseContext;
-use crate::ecollect_v6::{code_list, analytes, form_sets, forms, items, form_item, unit_groups, visits};
-use crate::traits::AlsParser;
 use crate::AlsParseError;
-use entities::project::Project;
+use crate::ecollect_v6::context::EcollectParseContext;
+use crate::ecollect_v6::{
+    analytes, code_list, form_item, form_sets, forms, items, unit_groups, visits,
+};
+use crate::traits::AlsParser;
+use entities::project::{Project, Visit};
 use std::path::Path;
 
 /// Ecollect v6 ALS parser implementation.
@@ -28,10 +30,47 @@ impl AlsParser for EcollectV6Parser {
         // Phase 4: Parse visits
         let visit_list = visits::parse_visits(path, &mut context)?;
 
+        // Phase 5: Compute form ordinals based on visit order
+        compute_form_ordinals(&mut context, &visit_list);
+
+        // Sort forms by ordinal
+        let mut forms: Vec<_> = context.forms.into_values().collect();
+        forms.sort_by_key(|f| f.order);
+
         // Build and return Project
         Ok(Project {
-            forms: context.forms.into_values().collect(),
+            forms,
             visit: visit_list,
         })
+    }
+}
+
+/// Compute form ordinals based on visit traversal order.
+///
+/// Algorithm:
+/// 1. Sort visits by field order, initialize an empty form OID list
+/// 2. Iterate visits in order, for each visit iterate its forms;
+///    if form OID not in the list, push it
+/// 3. Assign each form's ordinal to its index in the list
+fn compute_form_ordinals(context: &mut EcollectParseContext, visits: &[Visit]) {
+    // Sort visits by order field
+    let mut sorted_visits = visits.to_vec();
+    sorted_visits.sort_by_key(|v| v.order);
+
+    // Build ordered form OID list
+    let mut form_oid_list: Vec<String> = Vec::new();
+    for visit in &sorted_visits {
+        for form_oid in &visit.forms {
+            if !form_oid_list.contains(form_oid) {
+                form_oid_list.push(form_oid.clone());
+            }
+        }
+    }
+
+    // Assign ordinals to forms
+    for form in context.forms.values_mut() {
+        if let Some(index) = form_oid_list.iter().position(|oid| oid == &form.name) {
+            form.order = index as i32 + 1;
+        }
     }
 }

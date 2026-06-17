@@ -63,7 +63,7 @@ pub struct Domain {
     pub description: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Visit {
     pub code: String,
     pub name: String,
