@@ -1,4 +1,4 @@
-use calamine::{open_workbook, Reader, Xlsx, XlsxError};
+use calamine::{Reader, Xlsx, XlsxError, open_workbook};
 use std::path::Path;
 
 /// Parse AnalytesInTheStudy worksheet and populate context.analytes.
@@ -23,7 +23,7 @@ pub fn parse_analytes(
         }
 
         let analyte_code = row[0].to_string();
-        let analyte_name = row[1].to_string();
+        let analyte_name = row[4].to_string();
 
         if analyte_code.is_empty() || analyte_code == "AnalytesCode" {
             continue;

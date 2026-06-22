@@ -30,6 +30,7 @@ pub fn parse_group_items(
         let item_name = row[18].to_string();
         let code_list_oid = row[20].to_string();
         let required_str = row[28].to_string();
+        let default_value = row[26].to_string();
 
         if form_oid.is_empty() || form_oid == "FormOID" {
             continue;
@@ -40,16 +41,28 @@ pub fn parse_group_items(
 
         // Determine item options based on DisplayMode
         let item_option = if display_mode == "AnalytesOption" {
-            Some(
-                context
-                    .analytes
-                    .iter()
-                    .map(|(_, name)| ItemOption {
-                        option_display: name.clone(),
-                        annotations: Vec::new(),
-                    })
-                    .collect(),
-            )
+            // DefaultValue contains pipe-separated analyte codes; split and look up names
+            let options: Vec<ItemOption> = default_value
+                .split('|')
+                .filter_map(|code| {
+                    let code = code.trim();
+                    if code.is_empty() {
+                        return None;
+                    }
+                    context
+                        .analytes
+                        .get(code)
+                        .map(|name| ItemOption {
+                            option_display: name.clone(),
+                            annotations: Vec::new(),
+                        })
+                })
+                .collect();
+            if options.is_empty() {
+                None
+            } else {
+                Some(options)
+            }
         } else if !code_list_oid.is_empty() {
             context.code_list_options.get(&code_list_oid).cloned()
         } else {
