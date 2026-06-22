@@ -29,6 +29,7 @@ pub fn parse_group_items(
         let data_format = row[16].to_string();
         let item_name = row[18].to_string();
         let code_list_oid = row[20].to_string();
+        let check_field_required_str = row[27].to_string();
         let required_str = row[28].to_string();
         let default_value = row[26].to_string();
 
@@ -80,8 +81,13 @@ pub fn parse_group_items(
             _ => ControlType::TEXT,
         };
 
-        let required = required_str.to_lowercase() == "true";
-        let not_variable = Some(!required);
+        // CheckFieldRequired = "Disable" means not_variable = true
+        let not_variable = if check_field_required_str.to_lowercase() == "disable" {
+            Some(true)
+        } else {
+            let required = required_str.to_lowercase() == "true";
+            Some(!required)
+        };
 
         let item = CRFItem {
             name: item_oid,
