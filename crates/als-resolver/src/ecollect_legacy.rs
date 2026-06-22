@@ -7,4 +7,5 @@ pub mod forms;
 pub mod group_items;
 pub mod parser;
 
+pub use context::LegacyParseContext;
 pub use parser::EcollectLegacyParser;
