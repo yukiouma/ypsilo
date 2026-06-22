@@ -1,5 +1,5 @@
-use calamine::{open_workbook, Reader, Xlsx, XlsxError};
-use entities::project::{ControlType, CRFItem, ItemOption};
+use calamine::{Reader, Xlsx, XlsxError, open_workbook};
+use entities::project::{CRFItem, ControlType, ItemOption};
 use std::path::Path;
 
 /// Parse GroupItems worksheet and populate context.forms with CRFItem entries.
@@ -30,7 +30,6 @@ pub fn parse_group_items(
         let item_name = row[18].to_string();
         let code_list_oid = row[20].to_string();
         let check_field_required_str = row[27].to_string();
-        let required_str = row[28].to_string();
         let default_value = row[26].to_string();
 
         if form_oid.is_empty() || form_oid == "FormOID" {
@@ -50,13 +49,10 @@ pub fn parse_group_items(
                     if code.is_empty() {
                         return None;
                     }
-                    context
-                        .analytes
-                        .get(code)
-                        .map(|name| ItemOption {
-                            option_display: name.clone(),
-                            annotations: Vec::new(),
-                        })
+                    context.analytes.get(code).map(|name| ItemOption {
+                        option_display: name.clone(),
+                        annotations: Vec::new(),
+                    })
                 })
                 .collect();
             if options.is_empty() {
@@ -82,12 +78,7 @@ pub fn parse_group_items(
         };
 
         // CheckFieldRequired = "Disable" means not_variable = true
-        let not_variable = if check_field_required_str.to_lowercase() == "disable" {
-            Some(true)
-        } else {
-            let required = required_str.to_lowercase() == "true";
-            Some(!required)
-        };
+        let not_variable = Some(check_field_required_str.to_lowercase() == "disable");
 
         let item = CRFItem {
             name: item_oid,
