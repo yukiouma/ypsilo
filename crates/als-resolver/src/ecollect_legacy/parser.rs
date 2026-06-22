@@ -45,7 +45,18 @@ fn build_visits(context: &mut LegacyParseContext) -> Vec<Visit> {
     let mut sorted_visits: Vec<_> = context.visits.values_mut().collect();
     sorted_visits.sort_by_key(|v| v.order);
 
-    // Build ordered form OID list for ordinal computation
+    // Step 1: Apply event_form_bindings to visits FIRST
+    for visit in &mut sorted_visits {
+        if let Some(form_oids) = context.event_form_bindings.get(&visit.code) {
+            for form_oid in form_oids {
+                if !visit.forms.contains(form_oid) {
+                    visit.forms.push(form_oid.clone());
+                }
+            }
+        }
+    }
+
+    // Step 2: Build ordered form OID list by iterating visits in order
     let mut form_oid_list: Vec<String> = Vec::new();
     for visit in &sorted_visits {
         for form_oid in &visit.forms {
@@ -55,21 +66,10 @@ fn build_visits(context: &mut LegacyParseContext) -> Vec<Visit> {
         }
     }
 
-    // Assign ordinals to forms based on first-appearance order
+    // Step 3: Assign ordinal to each form based on index in form_oid_list (1-based)
     for form in context.forms.values_mut() {
         if let Some(index) = form_oid_list.iter().position(|oid| oid == &form.name) {
             form.order = index as i32 + 1;
-        }
-    }
-
-    // Apply event_form_bindings to visits
-    for visit in &mut sorted_visits {
-        if let Some(form_oids) = context.event_form_bindings.get(&visit.code) {
-            for form_oid in form_oids {
-                if !visit.forms.contains(form_oid) {
-                    visit.forms.push(form_oid.clone());
-                }
-            }
         }
     }
 
