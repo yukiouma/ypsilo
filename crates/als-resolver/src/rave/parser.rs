@@ -61,6 +61,14 @@ impl AlsParser for RaveParser {
             visit: context.visits,
         })
     }
+
+    fn parse_reader(&self, _reader: impl Read) -> Result<Project, AlsParseError> {
+        // Rave reads Excel files which require file-based access for worksheet navigation
+        Err(AlsParseError::IoError(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "rave does not support reader-based parsing",
+        )))
+    }
 }
 
 /// Navigate to a worksheet by name.

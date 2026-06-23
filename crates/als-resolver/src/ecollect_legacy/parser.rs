@@ -1,8 +1,9 @@
-use crate::AlsParseError;
+use crate::error::AlsParseError;
 use crate::ecollect_legacy::context::LegacyParseContext;
 use crate::ecollect_legacy::{analytes, code_list, events, event_form, forms, group_items};
 use crate::traits::AlsParser;
 use entities::project::{Project, Visit};
+use std::io::Read;
 use std::path::Path;
 
 pub struct EcollectLegacyParser;
@@ -38,6 +39,14 @@ impl AlsParser for EcollectLegacyParser {
             forms,
             visit: visit_list,
         })
+    }
+
+    fn parse_reader(&self, _reader: impl Read) -> Result<Project, AlsParseError> {
+        // ecollect_legacy reads from a directory structure, not a single reader
+        Err(AlsParseError::IoError(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "ecollect_legacy does not support reader-based parsing",
+        )))
     }
 }
 

@@ -1,10 +1,11 @@
-use crate::AlsParseError;
+use crate::error::AlsParseError;
 use crate::ecollect_v6::context::EcollectParseContext;
 use crate::ecollect_v6::{
     analytes, code_list, form_item, form_sets, forms, items, unit_groups, visits,
 };
 use crate::traits::AlsParser;
 use entities::project::{Project, Visit};
+use std::io::Read;
 use std::path::Path;
 
 /// Ecollect v6 ALS parser implementation.
@@ -42,6 +43,14 @@ impl AlsParser for EcollectV6Parser {
             forms,
             visit: visit_list,
         })
+    }
+
+    fn parse_reader(&self, _reader: impl Read) -> Result<Project, AlsParseError> {
+        // ecollect_v6 reads from a directory structure, not a single reader
+        Err(AlsParseError::IoError(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "ecollect_v6 does not support reader-based parsing",
+        )))
     }
 }
 
