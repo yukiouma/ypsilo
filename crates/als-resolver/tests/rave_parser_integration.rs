@@ -1,4 +1,6 @@
 use als_resolver::parse_rave_als;
+use als_resolver::parse_rave_als_from;
+use std::io::Cursor;
 use std::path::Path;
 
 #[test]
@@ -54,4 +56,43 @@ fn test_parse_rave_als_with_file() {
             assert!(!item.label.is_empty(), "Item label should not be empty");
         }
     }
+}
+
+#[test]
+fn test_parse_rave_als_from_reader() {
+    let path = std::path::Path::new("../../.mock_data/als/rave.xml");
+    if !path.exists() {
+        eprintln!("Skipping - .mock_data/als/rave.xml not found");
+        return;
+    }
+
+    let bytes = std::fs::read(path).unwrap();
+    let cursor = Cursor::new(bytes);
+
+    let result = parse_rave_als_from(cursor);
+    assert!(result.is_ok(), "parse_rave_als_from should succeed");
+
+    let project = result.unwrap();
+    assert!(!project.forms.is_empty(), "Project should have forms");
+    assert!(!project.visit.is_empty(), "Project should have visits");
+}
+
+#[test]
+fn test_parse_rave_als_from_reader_same_as_path() {
+    let path = std::path::Path::new("../../.mock_data/als/rave.xml");
+    if !path.exists() {
+        eprintln!("Skipping - .mock_data/als/rave.xml not found");
+        return;
+    }
+
+    // Parse from path
+    let from_path = als_resolver::parse_rave_als(path).unwrap();
+
+    // Parse from reader (should produce same result)
+    let bytes = std::fs::read(path).unwrap();
+    let cursor = Cursor::new(bytes);
+    let from_reader = parse_rave_als_from(cursor).unwrap();
+
+    assert_eq!(from_path.forms.len(), from_reader.forms.len(), "Form count should match");
+    assert_eq!(from_path.visit.len(), from_reader.visit.len(), "Visit count should match");
 }

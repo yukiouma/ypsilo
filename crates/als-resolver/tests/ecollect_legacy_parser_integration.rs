@@ -1,5 +1,7 @@
 use als_resolver::parse_ecollect_legacy_als;
+use als_resolver::parse_ecollect_legacy_als_from;
 use std::collections::HashSet;
+use std::io::Cursor;
 use std::path::Path;
 
 fn get_legacy_path() -> &'static Path {
@@ -99,4 +101,43 @@ fn test_parse_ecollect_legacy_als_not_variable() {
             "Items with not_variable=true should have TEXT, SELECTION, or CHECKBOX control type, got {:?}", item.control_type
         );
     }
+}
+
+#[test]
+fn test_parse_ecollect_legacy_als_from_reader() {
+    let path = std::path::Path::new("../../.mock_data/als/ecollect_legacy.xlsx");
+    if !path.exists() {
+        eprintln!("Skipping - .mock_data/als/ecollect_legacy.xlsx not found");
+        return;
+    }
+
+    let bytes = std::fs::read(path).unwrap();
+    let cursor = Cursor::new(bytes);
+
+    let result = parse_ecollect_legacy_als_from(cursor);
+    assert!(result.is_ok(), "parse_ecollect_legacy_als_from should succeed: {:?}", result.err());
+
+    let project = result.unwrap();
+    assert!(!project.forms.is_empty(), "Project should have forms");
+    assert!(!project.visit.is_empty(), "Project should have visits");
+}
+
+#[test]
+fn test_parse_ecollect_legacy_als_from_reader_same_as_path() {
+    let path = std::path::Path::new("../../.mock_data/als/ecollect_legacy.xlsx");
+    if !path.exists() {
+        eprintln!("Skipping - .mock_data/als/ecollect_legacy.xlsx not found");
+        return;
+    }
+
+    // Parse from path
+    let from_path = parse_ecollect_legacy_als(&path).unwrap();
+
+    // Parse from reader
+    let bytes = std::fs::read(path).unwrap();
+    let cursor = Cursor::new(bytes);
+    let from_reader = parse_ecollect_legacy_als_from(cursor).unwrap();
+
+    assert_eq!(from_path.forms.len(), from_reader.forms.len(), "Form count should match");
+    assert_eq!(from_path.visit.len(), from_reader.visit.len(), "Visit count should match");
 }
