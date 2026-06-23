@@ -1,22 +1,25 @@
 use als_resolver::parse_ecollect_legacy_als;
-use als_resolver::parse_ecollect_legacy_als_from;
 use std::collections::HashSet;
 use std::io::Cursor;
 use std::path::Path;
 
-fn get_legacy_path() -> &'static Path {
-    Path::new("../../.mock_data/als/ecollect_legacy.xlsx")
+fn read_ecollect_legacy_bytes() -> Option<Vec<u8>> {
+    let path = Path::new("../../.mock_data/als/ecollect_legacy.xlsx");
+    if !path.exists() {
+        None
+    } else {
+        Some(std::fs::read(path).unwrap())
+    }
 }
 
 #[test]
 fn test_parse_ecollect_legacy_als_basic() {
-    let path = get_legacy_path();
-    if !path.exists() {
+    let Some(bytes) = read_ecollect_legacy_bytes() else {
         eprintln!("Skipping - .mock_data/als/ecollect_legacy.xlsx not found");
         return;
-    }
+    };
 
-    let result = parse_ecollect_legacy_als(&path);
+    let result = parse_ecollect_legacy_als(Cursor::new(bytes));
     assert!(result.is_ok(), "parse_ecollect_legacy_als should succeed: {:?}", result.err());
     let project = result.unwrap();
     assert!(!project.forms.is_empty(), "Project should have forms");
@@ -25,30 +28,33 @@ fn test_parse_ecollect_legacy_als_basic() {
 
 #[test]
 fn test_parse_ecollect_legacy_als_forms_have_items() {
-    let path = get_legacy_path();
-    if !path.exists() { return; }
+    let Some(bytes) = read_ecollect_legacy_bytes() else {
+        return;
+    };
 
-    let project = parse_ecollect_legacy_als(&path).unwrap();
+    let project = parse_ecollect_legacy_als(Cursor::new(bytes)).unwrap();
     let forms_with_items = project.forms.iter().filter(|f| !f.items.is_empty()).count();
     assert!(forms_with_items > 0, "At least one form should have items");
 }
 
 #[test]
 fn test_parse_ecollect_legacy_als_visit_form_bindings() {
-    let path = get_legacy_path();
-    if !path.exists() { return; }
+    let Some(bytes) = read_ecollect_legacy_bytes() else {
+        return;
+    };
 
-    let project = parse_ecollect_legacy_als(&path).unwrap();
+    let project = parse_ecollect_legacy_als(Cursor::new(bytes)).unwrap();
     let visits_with_forms = project.visit.iter().filter(|v| !v.forms.is_empty()).count();
     assert!(visits_with_forms > 0, "At least one visit should have forms");
 }
 
 #[test]
 fn test_parse_ecollect_legacy_als_control_types() {
-    let path = get_legacy_path();
-    if !path.exists() { return; }
+    let Some(bytes) = read_ecollect_legacy_bytes() else {
+        return;
+    };
 
-    let project = parse_ecollect_legacy_als(&path).unwrap();
+    let project = parse_ecollect_legacy_als(Cursor::new(bytes)).unwrap();
     let control_types: HashSet<_> = project
         .forms
         .iter()
@@ -66,10 +72,11 @@ fn test_parse_ecollect_legacy_als_control_types() {
 
 #[test]
 fn test_parse_ecollect_legacy_als_item_options() {
-    let path = get_legacy_path();
-    if !path.exists() { return; }
+    let Some(bytes) = read_ecollect_legacy_bytes() else {
+        return;
+    };
 
-    let project = parse_ecollect_legacy_als(&path).unwrap();
+    let project = parse_ecollect_legacy_als(Cursor::new(bytes)).unwrap();
     for form in &project.forms {
         for item in &form.items {
             if let Some(ref options) = item.item_option {
@@ -84,10 +91,11 @@ fn test_parse_ecollect_legacy_als_item_options() {
 
 #[test]
 fn test_parse_ecollect_legacy_als_not_variable() {
-    let path = get_legacy_path();
-    if !path.exists() { return; }
+    let Some(bytes) = read_ecollect_legacy_bytes() else {
+        return;
+    };
 
-    let project = parse_ecollect_legacy_als(&path).unwrap();
+    let project = parse_ecollect_legacy_als(Cursor::new(bytes)).unwrap();
     let items_with_not_var = project
         .forms
         .iter()
@@ -101,43 +109,4 @@ fn test_parse_ecollect_legacy_als_not_variable() {
             "Items with not_variable=true should have TEXT, SELECTION, or CHECKBOX control type, got {:?}", item.control_type
         );
     }
-}
-
-#[test]
-fn test_parse_ecollect_legacy_als_from_reader() {
-    let path = std::path::Path::new("../../.mock_data/als/ecollect_legacy.xlsx");
-    if !path.exists() {
-        eprintln!("Skipping - .mock_data/als/ecollect_legacy.xlsx not found");
-        return;
-    }
-
-    let bytes = std::fs::read(path).unwrap();
-    let cursor = Cursor::new(bytes);
-
-    let result = parse_ecollect_legacy_als_from(cursor);
-    assert!(result.is_ok(), "parse_ecollect_legacy_als_from should succeed: {:?}", result.err());
-
-    let project = result.unwrap();
-    assert!(!project.forms.is_empty(), "Project should have forms");
-    assert!(!project.visit.is_empty(), "Project should have visits");
-}
-
-#[test]
-fn test_parse_ecollect_legacy_als_from_reader_same_as_path() {
-    let path = std::path::Path::new("../../.mock_data/als/ecollect_legacy.xlsx");
-    if !path.exists() {
-        eprintln!("Skipping - .mock_data/als/ecollect_legacy.xlsx not found");
-        return;
-    }
-
-    // Parse from path
-    let from_path = parse_ecollect_legacy_als(&path).unwrap();
-
-    // Parse from reader
-    let bytes = std::fs::read(path).unwrap();
-    let cursor = Cursor::new(bytes);
-    let from_reader = parse_ecollect_legacy_als_from(cursor).unwrap();
-
-    assert_eq!(from_path.forms.len(), from_reader.forms.len(), "Form count should match");
-    assert_eq!(from_path.visit.len(), from_reader.visit.len(), "Visit count should match");
 }
