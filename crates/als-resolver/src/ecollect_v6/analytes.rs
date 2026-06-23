@@ -1,11 +1,11 @@
-use calamine::{open_workbook, Reader, Xlsx, XlsxError};
+use calamine::{open_workbook_from_rs, Reader, Xlsx, XlsxError};
 use crate::ecollect_v6::context::EcollectParseContext;
-use std::path::Path;
+use std::io::{Read, Seek};
 
 /// Parse AnalytesInTheStudy worksheet and populate context.analytes.
 /// Build AnalyteCode → AnalyteName lookup for Lab Test / Lab Result options.
-pub fn parse_analytes(path: &Path, context: &mut EcollectParseContext) -> Result<(), crate::AlsParseError> {
-    let mut workbook: Xlsx<_> = open_workbook(path).map_err(|e: XlsxError| crate::AlsParseError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+pub fn parse_analytes(reader: impl Read + Seek, context: &mut EcollectParseContext) -> Result<(), crate::AlsParseError> {
+    let mut workbook: Xlsx<_> = open_workbook_from_rs(reader).map_err(|e: XlsxError| crate::AlsParseError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
 
     let range = workbook.worksheet_range("AnalytesInTheStudy")
         .map_err(|_| crate::AlsParseError::WorksheetNotFound("AnalytesInTheStudy".to_string()))?;

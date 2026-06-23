@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Seek};
 use std::path::Path;
 
 use crate::error::AlsParseError;
@@ -13,5 +13,5 @@ pub trait AlsParser {
         self.parse_reader(std::io::BufReader::new(file))
     }
 
-    fn parse_reader(&self, reader: impl Read) -> Result<Project, AlsParseError>;
+    fn parse_reader(&self, reader: impl Read + Seek) -> Result<Project, AlsParseError>;
 }

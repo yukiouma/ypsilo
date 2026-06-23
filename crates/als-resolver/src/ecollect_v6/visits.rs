@@ -1,13 +1,13 @@
-use calamine::{open_workbook, Reader, Xlsx, XlsxError};
+use calamine::{open_workbook_from_rs, Reader, Xlsx, XlsxError};
 use crate::ecollect_v6::context::EcollectParseContext;
 use entities::project::Visit;
-use std::path::Path;
+use std::io::{Read, Seek};
 
 /// Parse Plan* sheets and build Visit structs.
 /// Visit code = column header (columns 1+), name from formset_names lookup.
 /// Build visit_form_bindings from non-empty cells in Plan* sheets.
-pub fn parse_visits(path: &Path, context: &mut EcollectParseContext) -> Result<Vec<Visit>, crate::AlsParseError> {
-    let mut workbook: Xlsx<_> = open_workbook(path).map_err(|e: XlsxError| crate::AlsParseError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+pub fn parse_visits(reader: impl Read + Seek, context: &mut EcollectParseContext) -> Result<Vec<Visit>, crate::AlsParseError> {
+    let mut workbook: Xlsx<_> = open_workbook_from_rs(reader).map_err(|e: XlsxError| crate::AlsParseError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
 
     let plan_sheets = ["PlanSCR", "PlanCYCLE", "PlanEARLY", "PlanCOM", "PlanDSEOS", "PlanUNS"];
 

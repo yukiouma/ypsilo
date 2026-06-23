@@ -1,15 +1,15 @@
 use crate::ecollect_v6::context::{EcollectParseContext, ItemDef};
-use calamine::{Reader, Xlsx, XlsxError, open_workbook};
-use std::path::Path;
+use calamine::{Reader, Xlsx, XlsxError, open_workbook_from_rs};
+use std::io::{Read, Seek};
 
 /// Parse Items worksheet and populate context.item_definitions.
 /// Columns: ItemOID(0), SASFieldName(1), ItemName(2), ControlType(4),
 /// DataFormat(7), CodeListOID(8), UnitGroupOID(11).
 pub fn parse_items(
-    path: &Path,
+    reader: impl Read + Seek,
     context: &mut EcollectParseContext,
 ) -> Result<(), crate::AlsParseError> {
-    let mut workbook: Xlsx<_> = open_workbook(path).map_err(|e: XlsxError| {
+    let mut workbook: Xlsx<_> = open_workbook_from_rs(reader).map_err(|e: XlsxError| {
         crate::AlsParseError::IoError(std::io::Error::new(
             std::io::ErrorKind::Other,
             e.to_string(),

@@ -5,7 +5,8 @@ use crate::ecollect_v6::{
 };
 use crate::traits::AlsParser;
 use entities::project::{Project, Visit};
-use std::io::Read;
+use std::io::{BufReader, Cursor, Read, Seek};
+use std::fs::File;
 use std::path::Path;
 
 /// Ecollect v6 ALS parser implementation.
@@ -13,23 +14,32 @@ pub struct EcollectV6Parser;
 
 impl AlsParser for EcollectV6Parser {
     fn parse(&self, path: &Path) -> Result<Project, AlsParseError> {
+        let file = File::open(path)?;
+        self.parse_reader(BufReader::new(file))
+    }
+
+    fn parse_reader(&self, mut reader: impl Read + Seek) -> Result<Project, AlsParseError> {
         let mut context = EcollectParseContext::new();
 
+        // Read all bytes into memory (one-time cost for multiple calamine opens)
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes)?;
+
         // Phase 1: Load reference data
-        code_list::parse_code_list_items(path, &mut context)?;
-        analytes::parse_analytes(path, &mut context)?;
-        form_sets::parse_form_sets(path, &mut context)?;
-        unit_groups::parse_unit_groups(path, &mut context)?;
+        code_list::parse_code_list_items(Cursor::new(bytes.clone()), &mut context)?;
+        analytes::parse_analytes(Cursor::new(bytes.clone()), &mut context)?;
+        form_sets::parse_form_sets(Cursor::new(bytes.clone()), &mut context)?;
+        unit_groups::parse_unit_groups(Cursor::new(bytes.clone()), &mut context)?;
 
         // Phase 2: Parse forms
-        forms::parse_forms(path, &mut context)?;
+        forms::parse_forms(Cursor::new(bytes.clone()), &mut context)?;
 
         // Phase 3: Parse items and form-item linkage
-        items::parse_items(path, &mut context)?;
-        form_item::parse_form_item(path, &mut context)?;
+        items::parse_items(Cursor::new(bytes.clone()), &mut context)?;
+        form_item::parse_form_item(Cursor::new(bytes.clone()), &mut context)?;
 
         // Phase 4: Parse visits
-        let visit_list = visits::parse_visits(path, &mut context)?;
+        let visit_list = visits::parse_visits(Cursor::new(bytes.clone()), &mut context)?;
 
         // Phase 5: Compute form ordinals based on visit order
         compute_form_ordinals(&mut context, &visit_list);
@@ -38,19 +48,10 @@ impl AlsParser for EcollectV6Parser {
         let mut forms: Vec<_> = context.forms.into_values().collect();
         forms.sort_by_key(|f| f.order);
 
-        // Build and return Project
         Ok(Project {
             forms,
             visit: visit_list,
         })
-    }
-
-    fn parse_reader(&self, _reader: impl Read) -> Result<Project, AlsParseError> {
-        // ecollect_v6 reads from a directory structure, not a single reader
-        Err(AlsParseError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "ecollect_v6 does not support reader-based parsing",
-        )))
     }
 }
 

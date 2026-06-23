@@ -1,11 +1,11 @@
-use calamine::{open_workbook, Reader, Xlsx, XlsxError};
+use calamine::{open_workbook_from_rs, Reader, Xlsx, XlsxError};
 use crate::ecollect_v6::context::EcollectParseContext;
-use std::path::Path;
+use std::io::{Read, Seek};
 
 /// Parse Units worksheet into context.unit_groups.
 /// Build UnitGroupOID → Vec<UnitName> lookup for item_unit resolution.
-pub fn parse_unit_groups(path: &Path, context: &mut EcollectParseContext) -> Result<(), crate::AlsParseError> {
-    let mut workbook: Xlsx<_> = open_workbook(path).map_err(|e: XlsxError| crate::AlsParseError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+pub fn parse_unit_groups(reader: impl Read + Seek, context: &mut EcollectParseContext) -> Result<(), crate::AlsParseError> {
+    let mut workbook: Xlsx<_> = open_workbook_from_rs(reader).map_err(|e: XlsxError| crate::AlsParseError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
 
     // Parse Units worksheet (UnitGroupOID, UnitOID, UnitName, ...)
     let units_range = workbook.worksheet_range("Units")

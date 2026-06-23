@@ -1,13 +1,13 @@
-use calamine::{open_workbook, Reader, Xlsx, Data};
+use calamine::{open_workbook_from_rs, Reader, Xlsx, Data};
 use crate::ecollect_v6::context::EcollectParseContext;
 use entities::project::{CRFItem, ControlType, ItemOption, ItemUnit};
-use std::path::Path;
+use std::io::{Read, Seek};
 
 /// Parse FormItem worksheet and populate form.items with CRFItems.
 /// For each row, look up ItemOID in item_definitions, create CRFItem with
 /// ControlType mapping, CodeList/Lab Test options, unit resolution.
-pub fn parse_form_item(path: &Path, context: &mut EcollectParseContext) -> Result<(), crate::AlsParseError> {
-    let mut workbook: Xlsx<_> = open_workbook(path).map_err(|e: calamine::XlsxError| crate::AlsParseError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+pub fn parse_form_item(reader: impl Read + Seek, context: &mut EcollectParseContext) -> Result<(), crate::AlsParseError> {
+    let mut workbook: Xlsx<_> = open_workbook_from_rs(reader).map_err(|e: calamine::XlsxError| crate::AlsParseError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
 
     let range = workbook.worksheet_range("FormItem")
         .map_err(|_| crate::AlsParseError::WorksheetNotFound("FormItem".to_string()))?;
