@@ -9,23 +9,24 @@ use crate::traits::AlsParser;
 use entities::project::Project;
 use quick_xml::Reader;
 use quick_xml::events::Event;
-use std::fs::File;
-use std::io::{BufRead, Read};
-use std::path::Path;
+use std::io::BufRead;
 
 /// Rave ALS parser implementation.
 pub struct RaveParser;
 
 impl AlsParser for RaveParser {
-    fn parse(&self, path: &Path) -> Result<Project, AlsParseError> {
+    fn parse(&self, path: &std::path::Path) -> Result<Project, AlsParseError> {
+        let file = std::fs::File::open(path).map_err(AlsParseError::IoError)?;
+        self.parse_reader(std::io::BufReader::new(file))
+    }
+
+    fn parse_reader(&self, mut reader: impl std::io::Read) -> Result<Project, AlsParseError> {
         let mut context = ParseContext::new();
         // Read entire file into memory to allow multiple passes
-        let mut file = File::open(path).map_err(AlsParseError::IoError)?;
         let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
+        reader.read_to_end(&mut bytes)?;
 
         // Phase 1: Load DataDictionaries
-        // Navigate to DataDictionaryEntries worksheet
         let mut reader = Reader::from_reader(bytes.as_slice());
         reader.config_mut().trim_text(true);
         navigate_to_worksheet(&mut reader, "DataDictionaryEntries")?;
@@ -55,19 +56,10 @@ impl AlsParser for RaveParser {
         navigate_to_worksheet(&mut reader, "Matrix121#MASTER")?;
         parse_matrix_master(&mut reader, &mut context)?;
 
-        // Build and return Project
         Ok(Project {
             forms: context.forms.into_values().collect(),
             visit: context.visits,
         })
-    }
-
-    fn parse_reader(&self, _reader: impl Read) -> Result<Project, AlsParseError> {
-        // Rave reads Excel files which require file-based access for worksheet navigation
-        Err(AlsParseError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "rave does not support reader-based parsing",
-        )))
     }
 }
 
