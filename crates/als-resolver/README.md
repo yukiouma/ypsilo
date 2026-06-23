@@ -14,14 +14,35 @@ Parse ALS (Audit Landmark Study) files into a unified `Project` structure.
 
 ## Usage
 
+All parse functions accept any `impl Read + Seek` source (e.g., file, in-memory buffer, HTTP request body):
+
 ```rust
 use als_resolver::{parse_rave_als, parse_ecollect_v6_als, parse_ecollect_legacy_als};
+use std::io::Cursor;
 
-let project = parse_rave_als("path/to/rave.xml")?;
-let project = parse_ecollect_v6_als("path/to/ecollect_v6.xlsx")?;
-let project = parse_ecollect_legacy_als("path/to/ecollect_legacy.xlsx")?;
+// From a file
+let bytes = std::fs::read("path/to/rave.xml")?;
+let project = parse_rave_als(Cursor::new(bytes))?;
 
-println!("Forms: {}  Visits: {}", project.forms.len(), project.visit.len());
+// From bytes in memory
+let data = fetch_als_from_network();
+let project = parse_ecollect_v6_als(Cursor::new(data))?;
+```
+
+### HTTP Server Example (Axum)
+
+```rust
+use als_resolver::parse_ecollect_v6_als;
+use axum::{Router, routing::post, Json};
+use std::io::Cursor;
+
+async fn upload_als(body: bytes::Bytes) -> Result<Json<Project>, StatusCode> {
+    let project = parse_ecollect_v6_als(Cursor::new(body.to_vec()))
+        .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    Ok(Json(project))
+}
+
+let app = Router::new().route("/parse", post(upload_als));
 ```
 
 ## Output Model
@@ -69,7 +90,6 @@ All parse functions return `AlsParseError`:
 
 ```rust
 pub enum AlsParseError {
-    FileNotFound(String),
     IoError(String),
     XmlError(String),
     WorksheetNotFound(String),
