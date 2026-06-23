@@ -1,13 +1,13 @@
-use calamine::{open_workbook, Reader, Xlsx, XlsxError};
+use calamine::{open_workbook_from_rs, Reader, Xlsx, XlsxError};
 use entities::project::CRFForm;
-use std::path::Path;
+use std::io::{Read, Seek};
 
 /// Parse Forms worksheet and populate context.forms.
 pub fn parse_forms(
-    path: &Path,
+    reader: impl Read + Seek,
     context: &mut crate::ecollect_legacy::LegacyParseContext,
 ) -> Result<(), crate::AlsParseError> {
-    let mut workbook: Xlsx<_> = open_workbook(path).map_err(|e: XlsxError| {
+    let mut workbook: Xlsx<_> = open_workbook_from_rs(reader).map_err(|e: XlsxError| {
         crate::AlsParseError::IoError(std::io::Error::new(
             std::io::ErrorKind::Other,
             e.to_string(),

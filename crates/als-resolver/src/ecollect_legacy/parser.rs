@@ -3,30 +3,39 @@ use crate::ecollect_legacy::context::LegacyParseContext;
 use crate::ecollect_legacy::{analytes, code_list, events, event_form, forms, group_items};
 use crate::traits::AlsParser;
 use entities::project::{Project, Visit};
-use std::io::Read;
+use std::io::{BufReader, Cursor, Read, Seek};
 use std::path::Path;
 
 pub struct EcollectLegacyParser;
 
 impl AlsParser for EcollectLegacyParser {
     fn parse(&self, path: &Path) -> Result<Project, AlsParseError> {
+        let file = std::fs::File::open(path).map_err(AlsParseError::IoError)?;
+        self.parse_reader(BufReader::new(file))
+    }
+
+    fn parse_reader(&self, mut reader: impl Read + Seek) -> Result<Project, AlsParseError> {
         let mut context = LegacyParseContext::new();
 
+        // Read all bytes into memory (one-time cost for multiple calamine opens)
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes)?;
+
         // Phase 1: Load reference data
-        code_list::parse_code_list_items(path, &mut context)?;
-        analytes::parse_analytes(path, &mut context)?;
+        code_list::parse_code_list_items(Cursor::new(bytes.clone()), &mut context)?;
+        analytes::parse_analytes(Cursor::new(bytes.clone()), &mut context)?;
 
         // Phase 2: Parse forms
-        forms::parse_forms(path, &mut context)?;
+        forms::parse_forms(Cursor::new(bytes.clone()), &mut context)?;
 
         // Phase 3: Parse items (must happen after forms + reference data)
-        group_items::parse_group_items(path, &mut context)?;
+        group_items::parse_group_items(Cursor::new(bytes.clone()), &mut context)?;
 
         // Phase 4: Parse visits
-        events::parse_events(path, &mut context)?;
+        events::parse_events(Cursor::new(bytes.clone()), &mut context)?;
 
         // Phase 5: Link forms to visits via EventForm
-        event_form::parse_event_form(path, &mut context)?;
+        event_form::parse_event_form(Cursor::new(bytes.clone()), &mut context)?;
 
         // Phase 6: Build final visit list with form bindings
         let visit_list = build_visits(&mut context);
@@ -39,14 +48,6 @@ impl AlsParser for EcollectLegacyParser {
             forms,
             visit: visit_list,
         })
-    }
-
-    fn parse_reader(&self, _reader: impl Read) -> Result<Project, AlsParseError> {
-        // ecollect_legacy reads from a directory structure, not a single reader
-        Err(AlsParseError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "ecollect_legacy does not support reader-based parsing",
-        )))
     }
 }
 

@@ -1,12 +1,12 @@
-use calamine::{Reader, Xlsx, XlsxError, open_workbook};
-use std::path::Path;
+use calamine::{open_workbook_from_rs, Reader, Xlsx, XlsxError};
+use std::io::{Read, Seek};
 
 /// Parse AnalytesInTheStudy worksheet and populate context.analytes.
 pub fn parse_analytes(
-    path: &Path,
+    reader: impl Read + Seek,
     context: &mut crate::ecollect_legacy::LegacyParseContext,
 ) -> Result<(), crate::AlsParseError> {
-    let mut workbook: Xlsx<_> = open_workbook(path).map_err(|e: XlsxError| {
+    let mut workbook: Xlsx<_> = open_workbook_from_rs(reader).map_err(|e: XlsxError| {
         crate::AlsParseError::IoError(std::io::Error::new(
             std::io::ErrorKind::Other,
             e.to_string(),
