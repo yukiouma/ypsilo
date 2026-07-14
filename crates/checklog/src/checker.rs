@@ -94,8 +94,61 @@ impl Checker {
     }
 
     /// Reserved for Task 3.
-    pub fn check_str(&self, _input: &str) -> Vec<LogResult> {
-        unimplemented!("filled in by Task 3")
+    pub fn check_str(&self, input: &str) -> Vec<LogResult> {
+        // `str::lines()` matches `BufRead::lines()` semantics: empty input
+        // yields no results, and a trailing newline does not produce a
+        // trailing empty line. It also strips both `\n` and `\r\n`.
+        input
+            .lines()
+            .enumerate()
+            .map(|(i, line)| {
+                let line_number = i + 1;
+                let passed = self.check_line(line);
+                LogResult {
+                    line_number,
+                    content: line.to_string(),
+                    passed,
+                }
+            })
+            .collect()
+    }
+
+    fn check_line(&self, line: &str) -> bool {
+        // For case-insensitive keyword search we lowercase the haystack once.
+        // For regex matches we pass the original line (the (?i) flag is on
+        // the pattern itself, so the regex engine does its own case folding).
+        let haystack = if self.case_sensitive {
+            line.to_string()
+        } else {
+            line.to_lowercase()
+        };
+
+        // Whitelist first — first hit short-circuits as a pass.
+        for kw in &self.whitelist_keywords {
+            if haystack.contains(kw) {
+                return true;
+            }
+        }
+        for re in &self.whitelist_patterns {
+            if re.is_match(line) {
+                return true;
+            }
+        }
+
+        // Then issues — first hit short-circuits as a fail.
+        for kw in &self.issue_keywords {
+            if haystack.contains(kw) {
+                return false;
+            }
+        }
+        for re in &self.issue_patterns {
+            if re.is_match(line) {
+                return false;
+            }
+        }
+
+        // Clean.
+        true
     }
 
     /// Reserved for Task 4.
@@ -183,5 +236,243 @@ mod tests {
         };
         let checker_cs = Checker::new(&cfg_cs).unwrap();
         assert!(!checker_cs.issue_patterns[0].is_match("ABC"));
+    }
+
+    fn checker(cfg: Config) -> Checker {
+        Checker::new(&cfg).expect("test config must compile")
+    }
+
+    fn passed(line_number: usize, content: &str) -> LogResult {
+        LogResult {
+            line_number,
+            content: content.to_string(),
+            passed: true,
+        }
+    }
+
+    fn failed(line_number: usize, content: &str) -> LogResult {
+        LogResult {
+            line_number,
+            content: content.to_string(),
+            passed: false,
+        }
+    }
+
+    #[test]
+    fn check_str_no_rules_all_lines_pass() {
+        let c = checker(empty_cfg());
+        let results = c.check_str("a\nb\nc");
+        assert_eq!(
+            results,
+            vec![passed(1, "a"), passed(2, "b"), passed(3, "c")]
+        );
+    }
+
+    #[test]
+    fn check_str_empty_input_returns_empty() {
+        let c = checker(empty_cfg());
+        let results = c.check_str("");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn check_str_empty_line_passes() {
+        let c = checker(empty_cfg());
+        let results = c.check_str("a\n\nb");
+        assert_eq!(results[1].content, "");
+        assert!(results[1].passed);
+    }
+
+    #[test]
+    fn check_str_issue_keyword_marks_matching_line_failed() {
+        let cfg = Config {
+            issue_keywords: vec!["ERROR".into()],
+            ..empty_cfg()
+        };
+        let c = checker(cfg);
+        let results = c.check_str("INFO ok\nERROR boom\nINFO done");
+        assert_eq!(
+            results,
+            vec![
+                passed(1, "INFO ok"),
+                failed(2, "ERROR boom"),
+                passed(3, "INFO done"),
+            ]
+        );
+    }
+
+    #[test]
+    fn check_str_issue_pattern_marks_matching_line_failed() {
+        let cfg = Config {
+            issue_patterns: vec![r"panic|abort".into()],
+            ..empty_cfg()
+        };
+        let c = checker(cfg);
+        let results = c.check_str("INFO ok\nworker panic\nINFO done\naborted task");
+        assert_eq!(
+            results,
+            vec![
+                passed(1, "INFO ok"),
+                failed(2, "worker panic"),
+                passed(3, "INFO done"),
+                failed(4, "aborted task"),
+            ]
+        );
+    }
+
+    #[test]
+    fn check_str_first_keyword_match_wins() {
+        let cfg = Config {
+            issue_keywords: vec!["foo".into(), "bar".into()],
+            ..empty_cfg()
+        };
+        let c = checker(cfg);
+        // Both "foo" and "bar" appear; first in the list still flags the line as failed.
+        let results = c.check_str("foo and bar");
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+    }
+
+    #[test]
+    fn check_str_first_pattern_match_wins() {
+        let cfg = Config {
+            issue_patterns: vec![r"foo".into(), r"bar".into()],
+            ..empty_cfg()
+        };
+        let c = checker(cfg);
+        let results = c.check_str("foo and bar");
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+    }
+
+    #[test]
+    fn check_str_whitelist_keyword_skips_issue() {
+        let cfg = Config {
+            issue_keywords: vec!["ERROR".into()],
+            whitelist_keywords: vec!["retrying".into()],
+            ..empty_cfg()
+        };
+        let c = checker(cfg);
+        let results = c.check_str("ERROR retrying failed");
+        assert_eq!(results.len(), 1);
+        assert!(results[0].passed);
+    }
+
+    #[test]
+    fn check_str_whitelist_pattern_skips_issue() {
+        let cfg = Config {
+            issue_keywords: vec!["ERROR".into()],
+            whitelist_patterns: vec![r"retrying|expected".into()],
+            ..empty_cfg()
+        };
+        let c = checker(cfg);
+        let results = c.check_str("ERROR expected failure");
+        assert_eq!(results.len(), 1);
+        assert!(results[0].passed);
+    }
+
+    #[test]
+    fn check_str_whitelist_beats_issue_even_when_both_match() {
+        // The line matches both an issue keyword and a whitelist pattern.
+        // Whitelist must win regardless of which list is iterated "first" in Config.
+        let cfg_a = Config {
+            issue_keywords: vec!["ERROR".into()],
+            whitelist_patterns: vec![r"retried".into()],
+            ..empty_cfg()
+        };
+        assert!(checker(cfg_a.clone()).check_str("ERROR retried eventually")[0].passed);
+
+        // Same data, swap the relative "position" of the two lists in Config.
+        // (Field order is not observable; we still test the same outcome.)
+        let cfg_b = Config {
+            whitelist_patterns: vec![r"retried".into()],
+            issue_keywords: vec!["ERROR".into()],
+            ..empty_cfg()
+        };
+        assert!(checker(cfg_b).check_str("ERROR retried eventually")[0].passed);
+    }
+
+    #[test]
+    fn check_str_case_insensitive_by_default() {
+        let cfg = Config {
+            issue_keywords: vec!["error".into()],
+            ..empty_cfg()
+        };
+        let c = checker(cfg);
+        assert!(!c.check_str("ERROR boom")[0].passed);
+        assert!(!c.check_str("error boom")[0].passed);
+        assert!(!c.check_str("Error boom")[0].passed);
+    }
+
+    #[test]
+    fn check_str_case_sensitive_opt_in() {
+        let cfg = Config {
+            issue_keywords: vec!["error".into()],
+            case_sensitive: true,
+            ..empty_cfg()
+        };
+        let c = checker(cfg);
+        assert!(!c.check_str("error boom")[0].passed);
+        assert!(c.check_str("ERROR boom")[0].passed);
+        assert!(c.check_str("Error boom")[0].passed);
+    }
+
+    #[test]
+    fn check_str_strips_trailing_newline() {
+        let cfg = Config {
+            issue_keywords: vec!["ERROR".into()],
+            ..empty_cfg()
+        };
+        let c = checker(cfg);
+        let results = c.check_str("INFO ok\nERROR bad\n");
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].content, "INFO ok");
+        assert_eq!(results[1].content, "ERROR bad");
+        assert!(!results[0].content.contains('\n'));
+        assert!(!results[1].content.contains('\n'));
+    }
+
+    #[test]
+    fn check_str_strips_trailing_crlf() {
+        let c = checker(empty_cfg());
+        let results = c.check_str("a\r\nb\r\n");
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].content, "a");
+        assert_eq!(results[1].content, "b");
+    }
+
+    #[test]
+    fn check_str_realistic_fixture() {
+        // Mix of: clean line, issue-keyword hit, whitelist-keyword hit,
+        // clean line, issue-keyword hit (also matches a pattern but the
+        // keyword fires first), clean line, and a line that matches BOTH
+        // a whitelist keyword and an issue keyword (whitelist must win).
+        let cfg = Config {
+            issue_keywords: vec!["ERROR".into()],
+            issue_patterns: vec![r"panic|abort".into()],
+            whitelist_keywords: vec!["retrying".into()],
+            whitelist_patterns: vec![],
+            case_sensitive: false,
+        };
+        let input = "\
+2024-01-01 INFO startup
+2024-01-01 ERROR something went wrong
+2024-01-01 INFO retrying connection
+2024-01-01 WARN deprecated API
+2024-01-01 ERROR panic in worker
+2024-01-01 INFO shutdown
+2024-01-01 ERROR retrying failed
+";
+        let results = checker(cfg).check_str(input);
+        let expected = vec![
+            passed(1, "2024-01-01 INFO startup"),
+            failed(2, "2024-01-01 ERROR something went wrong"),
+            passed(3, "2024-01-01 INFO retrying connection"),
+            passed(4, "2024-01-01 WARN deprecated API"),
+            failed(5, "2024-01-01 ERROR panic in worker"),
+            passed(6, "2024-01-01 INFO shutdown"),
+            passed(7, "2024-01-01 ERROR retrying failed"),
+        ];
+        assert_eq!(results, expected);
     }
 }
