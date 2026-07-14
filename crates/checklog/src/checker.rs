@@ -152,8 +152,25 @@ impl Checker {
     }
 
     /// Reserved for Task 4.
-    pub fn check_file<P: AsRef<Path>>(&self, _path: P) -> Result<Vec<LogResult>, CheckError> {
-        unimplemented!("filled in by Task 4")
+    pub fn check_file<P: AsRef<Path>>(&self, path: P) -> Result<Vec<LogResult>, CheckError> {
+        use std::io::{BufRead, BufReader};
+
+        let file = std::fs::File::open(path).map_err(CheckError::Io)?;
+        let reader = BufReader::new(file);
+
+        let mut out = Vec::new();
+        for (i, line) in reader.lines().enumerate() {
+            // BufRead::lines() strips the trailing '\n' / '\r\n' for us.
+            let content = line.map_err(CheckError::Io)?;
+            let line_number = i + 1;
+            let passed = self.check_line(&content);
+            out.push(LogResult {
+                line_number,
+                content,
+                passed,
+            });
+        }
+        Ok(out)
     }
 }
 
@@ -474,5 +491,54 @@ mod tests {
             passed(7, "2024-01-01 ERROR retrying failed"),
         ];
         assert_eq!(results, expected);
+    }
+
+    #[test]
+    fn check_file_missing_returns_io_error() {
+        let c = checker(empty_cfg());
+        let result = c.check_file("/no/such/path/__checklog_does_not_exist.log");
+        assert!(matches!(result, Err(CheckError::Io(_))));
+    }
+
+    #[test]
+    fn check_file_reads_lines_with_one_indexed_numbers() {
+        use std::io::Write;
+
+        let cfg = Config {
+            issue_keywords: vec!["ERROR".into()],
+            ..empty_cfg()
+        };
+        let c = checker(cfg);
+
+        let mut tmp = tempfile::NamedTempFile::new().expect("create tempfile");
+        writeln!(tmp, "INFO startup").unwrap();
+        writeln!(tmp, "ERROR failed").unwrap();
+        writeln!(tmp, "INFO done").unwrap();
+
+        let results = c.check_file(tmp.path()).expect("file must be readable");
+        assert_eq!(
+            results,
+            vec![
+                passed(1, "INFO startup"),
+                failed(2, "ERROR failed"),
+                passed(3, "INFO done"),
+            ]
+        );
+    }
+
+    #[test]
+    fn check_file_strips_trailing_crlf() {
+        use std::io::Write;
+
+        let c = checker(empty_cfg());
+        let mut tmp = tempfile::NamedTempFile::new().expect("create tempfile");
+        // Write raw bytes including CRLF line endings.
+        tmp.write_all(b"a\r\nb\r\n").unwrap();
+
+        let results = c.check_file(tmp.path()).unwrap();
+        assert_eq!(
+            results,
+            vec![passed(1, "a"), passed(2, "b")]
+        );
     }
 }

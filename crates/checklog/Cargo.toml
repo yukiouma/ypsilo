@@ -1,0 +1,10 @@
+[package]
+name = "checklog"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+regex = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
