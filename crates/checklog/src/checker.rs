@@ -2,6 +2,8 @@
 
 use std::path::Path;
 
+use thiserror::Error;
+
 use crate::Config;
 
 /// Outcome for a single log line.
@@ -16,28 +18,12 @@ pub struct LogResult {
 }
 
 /// Errors returned by the checker.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum CheckError {
-    Io(std::io::Error),
-    Regex(regex::Error),
-}
-
-impl std::fmt::Display for CheckError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CheckError::Io(e) => write!(f, "I/O error: {e}"),
-            CheckError::Regex(e) => write!(f, "invalid regex: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for CheckError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            CheckError::Io(e) => Some(e),
-            CheckError::Regex(e) => Some(e),
-        }
-    }
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("invalid regex: {0}")]
+    Regex(#[from] regex::Error),
 }
 
 /// Compiles a [`Config`] and applies it to log content.
@@ -72,7 +58,7 @@ impl Checker {
             } else {
                 format!("(?i){pat}")
             };
-            regex::Regex::new(&source).map_err(CheckError::Regex)
+            Ok(regex::Regex::new(&source)?)
         };
 
         let mut issue_patterns = Vec::with_capacity(config.issue_patterns.len());
@@ -155,13 +141,13 @@ impl Checker {
     pub fn check_file<P: AsRef<Path>>(&self, path: P) -> Result<Vec<LogResult>, CheckError> {
         use std::io::{BufRead, BufReader};
 
-        let file = std::fs::File::open(path).map_err(CheckError::Io)?;
+        let file = std::fs::File::open(path)?;
         let reader = BufReader::new(file);
 
         let mut out = Vec::new();
         for (i, line) in reader.lines().enumerate() {
             // BufRead::lines() strips the trailing '\n' / '\r\n' for us.
-            let content = line.map_err(CheckError::Io)?;
+            let content = line?;
             let line_number = i + 1;
             let passed = self.check_line(&content);
             out.push(LogResult {
