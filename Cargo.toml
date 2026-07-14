@@ -1,5 +1,10 @@
 [workspace]
-members = ["crates/als-resolver", "crates/entities", "crates/checklog"]
+members = [
+    "crates/als-resolver",
+    "crates/entities",
+    "crates/checklog",
+    "crates/qc_result",
+]
 resolver = "2"
 
 [workspace.dependencies]
@@ -9,3 +14,6 @@ thiserror = "2.0.18"
 regex = "1.13.0"
 tempfile = "3.27.0"
 serde = { version = "1.0.228", features = ["derive"] }
+resolver = "2"
+lazy_static = "1.5.0"
+scraper = "0.27.0"
