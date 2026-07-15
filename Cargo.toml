@@ -8,5 +8,4 @@ quick-xml = "0.40.1"
 thiserror = "2.0.18"
 regex = "1.13.0"
 tempfile = "3.27.0"
-thiserror = "2.0.18"
 serde = { version = "1.0.228", features = ["derive"] }
