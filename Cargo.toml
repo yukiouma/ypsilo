@@ -1,8 +1,11 @@
 [workspace]
-members = ["crates/als-resolver","crates/entities"]
+members = ["crates/als-resolver", "crates/entities", "crates/checklog"]
 resolver = "2"
 
 [workspace.dependencies]
 calamine = "0.35.0"
 quick-xml = "0.40.1"
 thiserror = "2.0.18"
+regex = "1.13.0"
+tempfile = "3.27.0"
+serde = { version = "1.0.228", features = ["derive"] }
