@@ -2,9 +2,9 @@ use crate::error::AlsParseError;
 use crate::rave::context::ParseContext;
 use crate::rave::data_dictionary::parse_data_dictionaries;
 use crate::rave::fields::parse_fields;
-use crate::rave::forms::parse_forms;
 use crate::rave::folders::parse_folders;
-use crate::rave::matrices::parse_matrix_master;
+use crate::rave::forms::parse_forms;
+use crate::rave::matrices::{find_master_matrix_sheet, parse_matrix_master};
 use crate::traits::AlsParser;
 use entities::project::Project;
 use quick_xml::Reader;
@@ -51,9 +51,16 @@ impl AlsParser for RaveParser {
         parse_folders(&mut reader, &mut context)?;
 
         // Phase 5: Parse Matrix#MASTER to populate Visit.forms
+
+        // Find out the name of MASTER sheet, the sheet name will be something like "Matrix121#MASTER"
         reader = Reader::from_reader(bytes.as_slice());
         reader.config_mut().trim_text(true);
-        navigate_to_worksheet(&mut reader, "Matrix121#MASTER")?;
+        navigate_to_worksheet(&mut reader, "Matrices")?;
+        let master_sheet_name = find_master_matrix_sheet(&mut reader)?;
+
+        reader = Reader::from_reader(bytes.as_slice());
+        reader.config_mut().trim_text(true);
+        navigate_to_worksheet(&mut reader, &master_sheet_name)?;
         parse_matrix_master(&mut reader, &mut context)?;
 
         Ok(Project {

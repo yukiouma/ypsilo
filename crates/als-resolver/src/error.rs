@@ -1,10 +1,13 @@
-use thiserror::Error;
 use std::io;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AlsParseError {
     #[error("file not found: {0}")]
     FileNotFound(String),
+
+    #[error("sheet not found: {0}")]
+    SheetNotFound(String),
 
     #[error("I/O error: {0}")]
     IoError(#[from] io::Error),
