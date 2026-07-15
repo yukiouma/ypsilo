@@ -1,13 +1,12 @@
 //! Log-checker logic: compiles the user's rules and applies them to input.
 
+use crate::Config;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
-
 use thiserror::Error;
 
-use crate::Config;
-
 /// Outcome for a single log line.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogResult {
     /// 1-indexed line number.
     pub line_number: usize,
@@ -522,9 +521,6 @@ mod tests {
         tmp.write_all(b"a\r\nb\r\n").unwrap();
 
         let results = c.check_file(tmp.path()).unwrap();
-        assert_eq!(
-            results,
-            vec![passed(1, "a"), passed(2, "b")]
-        );
+        assert_eq!(results, vec![passed(1, "a"), passed(2, "b")]);
     }
 }
