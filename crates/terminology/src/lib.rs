@@ -1,14 +1,8 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! CDISC terminology deserialisation.
+//!
+//! Reads an SDTM or ADaM terminology workbook (`.xls`/`.xlsx`) and produces
+//! a [`TerminologyVersion`] containing all the [`CodeList`]s and their
+//! [`CodeItem`]s.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+mod loader;
+mod model;
