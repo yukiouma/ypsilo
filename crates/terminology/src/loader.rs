@@ -76,11 +76,10 @@ fn select_sheet<'a>(
 /// variants that carry a sheet context. Row numbers reported in errors are
 /// 1-indexed and count the header row (so the first data row is row 2).
 pub(crate) fn parse_range(
-    source: &str,
+    _source: &str,
     sheet_name: &str,
     range: &calamine::Range<calamine::Data>,
 ) -> Result<TerminologyVersion, TerminologyError> {
-    let _ = source; // currently unused; reserved for future error enrichment
     let mut codelists: Vec<CodeList> = Vec::new();
     let mut codelist_index: HashMap<String, usize> = HashMap::new();
 
@@ -108,6 +107,12 @@ pub(crate) fn parse_range(
             })?;
 
         let code = cells[0].clone();
+        if code.is_empty() {
+            return Err(TerminologyError::EmptyCode {
+                sheet: sheet_name.to_string(),
+                row: row_number,
+            });
+        }
         let codelist_code_ref = &cells[1];
         let extensible = &cells[2];
         let name = cells[3].clone();
@@ -121,7 +126,15 @@ pub(crate) fn parse_range(
             let ext = match extensible.to_ascii_lowercase().as_str() {
                 "yes" => true,
                 "no" => false,
-                _ => unreachable!("strict validation added in Task 6"),
+                _ => {
+                    return Err(TerminologyError::InvalidExtensible {
+                        sheet: sheet_name.to_string(),
+                        row: row_number,
+                        // Report the value as it appears in the workbook, not
+                        // the lowercased form used for matching.
+                        value: extensible.clone(),
+                    });
+                }
             };
             let new_idx = codelists.len();
             codelist_index.insert(code.clone(), new_idx);
@@ -137,9 +150,13 @@ pub(crate) fn parse_range(
             });
         } else {
             // CodeItem row.
-            let parent_idx = *codelist_index.get(codelist_code_ref).expect(
-                "orphan validation added in Task 6",
-            );
+            let parent_idx = *codelist_index.get(codelist_code_ref).ok_or_else(|| {
+                TerminologyError::OrphanCodeItem {
+                    sheet: sheet_name.to_string(),
+                    row: row_number,
+                    codelist_code: codelist_code_ref.clone(),
+                }
+            })?;
             codelists[parent_idx].code_list.push(CodeItem {
                 code,
                 submission_value,
@@ -151,9 +168,22 @@ pub(crate) fn parse_range(
     }
 
     Ok(TerminologyVersion {
-        name: String::new(), // populated by the caller in Task 6
+        name: String::new(), // populated by `parse_range_with_date`
         codelist: codelists,
     })
+}
+
+/// Like [`parse_range`], but fills the resulting [`TerminologyVersion`]'s
+/// `name` field with `date`.
+pub(crate) fn parse_range_with_date(
+    source: &str,
+    sheet_name: &str,
+    date: &str,
+    range: &calamine::Range<calamine::Data>,
+) -> Result<TerminologyVersion, TerminologyError> {
+    let mut v = parse_range(source, sheet_name, range)?;
+    v.name = date.to_string();
+    Ok(v)
 }
 
 #[cfg(test)]
@@ -477,5 +507,93 @@ mod parse_range_tests {
             }
             other => panic!("expected BadRow, got {other:?}"),
         }
+    }
+
+    // --- strict validations ----------------------------------------------------
+
+    #[test]
+    fn parse_range_rejects_empty_code_in_codelist_row() {
+        let range = range_from_rows(vec![
+            vec![empty(); 8],
+            vec![empty(), empty(), s("No"), s("N"), s("SV"), empty(), empty(), empty()],
+        ]);
+        let err = parse_range("src.xls", "SDTM Terminology 2026-03-27", &range).unwrap_err();
+        assert!(matches!(err, TerminologyError::EmptyCode { row: 2, .. }));
+    }
+
+    #[test]
+    fn parse_range_rejects_empty_code_in_codeitem_row() {
+        let range = range_from_rows(vec![
+            vec![empty(); 8],
+            // Valid CodeList.
+            vec![s("C1"), empty(), s("No"), s("N"), s("SV"), empty(), empty(), empty()],
+            // CodeItem with empty Code column.
+            vec![empty(), s("C1"), empty(), empty(), s("SV"), empty(), empty(), empty()],
+        ]);
+        let err = parse_range("src.xls", "SDTM Terminology 2026-03-27", &range).unwrap_err();
+        assert!(matches!(err, TerminologyError::EmptyCode { row: 3, .. }));
+    }
+
+    #[test]
+    fn parse_range_rejects_unparseable_extensible() {
+        let range = range_from_rows(vec![
+            vec![empty(); 8],
+            vec![s("C1"), empty(), s("Maybe"), s("N"), s("SV"), empty(), empty(), empty()],
+        ]);
+        let err = parse_range("src.xls", "SDTM Terminology 2026-03-27", &range).unwrap_err();
+        match err {
+            TerminologyError::InvalidExtensible { sheet, row, value } => {
+                assert_eq!(sheet, "SDTM Terminology 2026-03-27");
+                assert_eq!(row, 2);
+                assert_eq!(value, "Maybe");
+            }
+            other => panic!("expected InvalidExtensible, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_range_accepts_mixed_case_extensible() {
+        let range = range_from_rows(vec![
+            vec![empty(); 8],
+            vec![s("C1"), empty(), s("YES"), s("N"), s("SV"), empty(), empty(), empty()],
+            vec![s("C2"), empty(), s("no"), s("N"), s("SV"), empty(), empty(), empty()],
+        ]);
+        let v = parse_range("src.xls", "SDTM Terminology 2026-03-27", &range).unwrap();
+        assert!(v.codelist[0].extensible);
+        assert!(!v.codelist[1].extensible);
+    }
+
+    #[test]
+    fn parse_range_rejects_orphan_codeitem() {
+        let range = range_from_rows(vec![
+            vec![empty(); 8],
+            vec![s("C1"), empty(), s("No"), s("N"), s("SV"), empty(), empty(), empty()],
+            vec![s("CI"), s("C999"), empty(), empty(), s("SV"), empty(), empty(), empty()],
+        ]);
+        let err = parse_range("src.xls", "SDTM Terminology 2026-03-27", &range).unwrap_err();
+        match err {
+            TerminologyError::OrphanCodeItem { sheet, row, codelist_code } => {
+                assert_eq!(sheet, "SDTM Terminology 2026-03-27");
+                assert_eq!(row, 3);
+                assert_eq!(codelist_code, "C999");
+            }
+            other => panic!("expected OrphanCodeItem, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_range_with_date_sets_name_field() {
+        let range = range_from_rows(vec![
+            vec![empty(); 8],
+            vec![s("C1"), empty(), s("No"), s("N"), s("SV"), empty(), empty(), empty()],
+        ]);
+        let v = parse_range_with_date(
+            "src.xls",
+            "SDTM Terminology 2026-03-27",
+            "2026-03-27",
+            &range,
+        )
+        .unwrap();
+        assert_eq!(v.name, "2026-03-27");
     }
 }
