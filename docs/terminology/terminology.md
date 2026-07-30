@@ -61,7 +61,7 @@ Columns:
 ## Attentions
 
 1. use `thiserror` crate in workspace to wrap errors
-2. use crate calamine(0.36.1) to read xls files
+2. use crate calamine(already declare in cargo workspace) to read xls files
 3. export the data model and the deserialize function from the crate
 
 ## Test
