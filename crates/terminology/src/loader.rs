@@ -1,7 +1,10 @@
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::{Read, Seek};
+use std::path::Path;
 
 use crate::model::{CodeItem, CodeList, TerminologyError, TerminologyVersion};
-use calamine::Data;
+use calamine::{Data, Range, Reader, Sheets, open_workbook_auto, open_workbook_auto_from_rs};
 
 /// Convert a single [`calamine::Data`] cell into a [`String`].
 ///
@@ -184,6 +187,67 @@ pub(crate) fn parse_range_with_date(
     let mut v = parse_range(source, sheet_name, range)?;
     v.name = date.to_string();
     Ok(v)
+}
+
+/// Open a workbook at `path`, find the matching terminology sheet, and
+/// deserialise it.
+pub fn from_path<P: AsRef<Path>>(path: P) -> Result<TerminologyVersion, crate::TerminologyError> {
+    let path_ref = path.as_ref();
+    let source = path_ref.display().to_string();
+    // Probe the file with `std::fs::File` first so a missing-file or
+    // permission error surfaces as `TerminologyError::Io` rather than being
+    // wrapped in `TerminologyError::Workbook(calamine::Error)`.
+    drop(
+        File::open(path_ref).map_err(|err| crate::TerminologyError::Io {
+            path: source.clone(),
+            source: err,
+        })?,
+    );
+    let mut workbook = open_workbook_auto(path_ref).map_err(crate::TerminologyError::from)?;
+    read_workbook(&mut workbook, &source)
+}
+
+/// Open a workbook from an arbitrary `Read + Seek` reader.
+///
+/// The reader is drained into memory first — calamine's format autodetection
+/// for readers requires a `Clone`able source, and `std::fs::File` is not
+/// `Clone`. Both calamine backends buffer the whole workbook anyway, so this
+/// costs no extra peak memory in practice.
+pub fn from_reader<R: Read + Seek>(
+    mut reader: R,
+) -> Result<TerminologyVersion, crate::TerminologyError> {
+    let mut bytes = Vec::new();
+    reader
+        .read_to_end(&mut bytes)
+        .map_err(|err| crate::TerminologyError::Io {
+            path: String::new(),
+            source: err,
+        })?;
+    from_bytes(&bytes)
+}
+
+/// Open a workbook from an in-memory byte slice.
+pub fn from_bytes(bytes: &[u8]) -> Result<TerminologyVersion, crate::TerminologyError> {
+    // `Cursor<&[u8]>` is `Read + Seek + Clone`, which is exactly what
+    // calamine's reader-based autodetection needs — no copy required.
+    let cursor = std::io::Cursor::new(bytes);
+    let mut workbook = open_workbook_auto_from_rs(cursor).map_err(crate::TerminologyError::from)?;
+    read_workbook(&mut workbook, "")
+}
+
+/// Pick the matching sheet out of an already-opened `workbook` and deserialise
+/// it. `source` is the path string used in error messages; it is `""` for the
+/// in-memory entry points.
+fn read_workbook<RS: Read + Seek>(
+    workbook: &mut Sheets<RS>,
+    source: &str,
+) -> Result<TerminologyVersion, crate::TerminologyError> {
+    let sheet_names: Vec<String> = workbook.sheet_names().to_vec();
+    let (sheet_name, date) = select_sheet(&sheet_names, source)?;
+    let range: Range<Data> = workbook
+        .worksheet_range(sheet_name)
+        .map_err(crate::TerminologyError::from)?;
+    parse_range_with_date(source, sheet_name, &date, &range)
 }
 
 #[cfg(test)]
@@ -456,7 +520,7 @@ mod parse_range_tests {
         let v = parse_range("src.xls", "SDTM Terminology 2026-03-27", &range).expect("parse");
         let cl = &v.codelist[0];
         assert_eq!(cl.code, "C1");
-        assert_eq!(cl.extensible, false);
+        assert!(!cl.extensible);
         assert_eq!(cl.name, "Name");
         assert_eq!(cl.submission_value, "SV");
         assert_eq!(cl.synonym, "Syn");
