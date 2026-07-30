@@ -1,4 +1,6 @@
-use crate::model::TerminologyError;
+use std::collections::HashMap;
+
+use crate::model::{CodeItem, CodeList, TerminologyError, TerminologyVersion};
 use calamine::Data;
 
 /// Convert a single [`calamine::Data`] cell into a [`String`].
@@ -65,6 +67,93 @@ fn select_sheet<'a>(
             names: matches.into_iter().map(String::from).collect(),
         }),
     }
+}
+
+/// Parse every data row in `range` into a [`TerminologyVersion`].
+///
+/// `source` is the path or other human-readable identifier used in error
+/// messages; `sheet_name` is the matched sheet name and is included in error
+/// variants that carry a sheet context. Row numbers reported in errors are
+/// 1-indexed and count the header row (so the first data row is row 2).
+pub(crate) fn parse_range(
+    source: &str,
+    sheet_name: &str,
+    range: &calamine::Range<calamine::Data>,
+) -> Result<TerminologyVersion, TerminologyError> {
+    let _ = source; // currently unused; reserved for future error enrichment
+    let mut codelists: Vec<CodeList> = Vec::new();
+    let mut codelist_index: HashMap<String, usize> = HashMap::new();
+
+    for (idx, row) in range.rows().enumerate() {
+        let row_number = idx + 1; // 1-indexed, header is row 1
+
+        // Skip the header row.
+        if idx == 0 {
+            continue;
+        }
+
+        // Pad short rows so missing trailing cells are treated as empty.
+        let padded: Vec<calamine::Data> = (0..8)
+            .map(|i| row.get(i).cloned().unwrap_or(calamine::Data::Empty))
+            .collect();
+
+        let cells: Vec<String> = padded
+            .iter()
+            .map(cell_to_string)
+            .collect::<Result<_, _>>()
+            .map_err(|message| TerminologyError::BadRow {
+                sheet: sheet_name.to_string(),
+                row: row_number,
+                message,
+            })?;
+
+        let code = cells[0].clone();
+        let codelist_code_ref = &cells[1];
+        let extensible = &cells[2];
+        let name = cells[3].clone();
+        let submission_value = cells[4].clone();
+        let synonym = cells[5].clone();
+        let definition = cells[6].clone();
+        let nci_preferred_term = cells[7].clone();
+
+        if codelist_code_ref.is_empty() {
+            // CodeList row.
+            let ext = match extensible.to_ascii_lowercase().as_str() {
+                "yes" => true,
+                "no" => false,
+                _ => unreachable!("strict validation added in Task 6"),
+            };
+            let new_idx = codelists.len();
+            codelist_index.insert(code.clone(), new_idx);
+            codelists.push(CodeList {
+                code,
+                extensible: ext,
+                name,
+                submission_value,
+                synonym,
+                definition,
+                nci_preferred_term,
+                code_list: Vec::new(),
+            });
+        } else {
+            // CodeItem row.
+            let parent_idx = *codelist_index.get(codelist_code_ref).expect(
+                "orphan validation added in Task 6",
+            );
+            codelists[parent_idx].code_list.push(CodeItem {
+                code,
+                submission_value,
+                synonym,
+                definition,
+                nci_preferred_term,
+            });
+        }
+    }
+
+    Ok(TerminologyVersion {
+        name: String::new(), // populated by the caller in Task 6
+        codelist: codelists,
+    })
 }
 
 #[cfg(test)]
@@ -196,5 +285,197 @@ mod tests {
         let names = vec!["SDTM Terminology not-a-date".to_string()];
         let err = select_sheet(&names, "/tmp/foo.xls").unwrap_err();
         assert!(matches!(err, TerminologyError::NoMatchingSheet { .. }));
+    }
+}
+
+#[cfg(test)]
+mod parse_range_tests {
+    use super::*;
+    use calamine::Data;
+
+    /// Build a 2-D `Vec<Vec<Data>>` fixture and turn it into a `Range<Data>`.
+    /// Header row is index 0; data rows follow.
+    ///
+    /// NOTE: calamine 0.35 does not expose `Range::from_iter`; the closest
+    /// equivalent is `Range::from_sparse(Vec<Cell<T>>)` which infers the
+    /// range bounds from the supplied cells' positions and fills the
+    /// remainder with `T::default()` (i.e. `Data::Empty`).
+    fn range_from_rows(rows: Vec<Vec<Data>>) -> calamine::Range<Data> {
+        let mut cells = Vec::new();
+        for (r, row) in rows.iter().enumerate() {
+            for (c, cell) in row.iter().enumerate() {
+                cells.push(calamine::Cell::new((r as u32, c as u32), cell.clone()));
+            }
+        }
+        calamine::Range::from_sparse(cells)
+    }
+
+    fn s(v: &str) -> Data {
+        Data::String(v.to_string())
+    }
+
+    fn empty() -> Data {
+        Data::Empty
+    }
+
+    fn sdtm_fixture() -> Vec<Vec<Data>> {
+        vec![
+            // Header row — must be skipped.
+            vec![s("Code"), s("Codelist Code"), empty(), empty(), empty(), empty(), empty(), empty()],
+            // CodeList 1
+            vec![
+                s("C141657"),
+                empty(),
+                s("No"),
+                s("Ten-Meter Walk/Run Test Code"),
+                s("TENMW1TC"),
+                s("synA"),
+                s("defA"),
+                s("nciA"),
+            ],
+            // CodeItem 1 under C141657
+            vec![
+                s("C174106"),
+                s("C141657"),
+                empty(),
+                empty(),
+                s("TENMW101"),
+                s("synB"),
+                s("defB"),
+                s("nciB"),
+            ],
+            // CodeItem 2 under C141657
+            vec![
+                s("C141700"),
+                s("C141657"),
+                empty(),
+                empty(),
+                s("TENMW102"),
+                empty(),
+                empty(),
+                empty(),
+            ],
+            // CodeList 2
+            vec![
+                s("C141656"),
+                empty(),
+                s("Yes"),
+                s("Ten-Meter Walk/Run Test Name"),
+                s("TENMW1TN"),
+                s("synC"),
+                s("defC"),
+                s("nciC"),
+            ],
+            // CodeItem under CodeList 2
+            vec![
+                s("C141701"),
+                s("C141656"),
+                empty(),
+                empty(),
+                s("TENMW1-Test Grade"),
+                empty(),
+                empty(),
+                empty(),
+            ],
+        ]
+    }
+
+    #[test]
+    fn parse_range_skips_header_and_groups_items() {
+        let range = range_from_rows(sdtm_fixture());
+        let v = parse_range("src.xls", "SDTM Terminology 2026-03-27", &range).expect("parse");
+
+        // `name` is populated by the Task 6 wrapper; in this task it is empty.
+        assert_eq!(v.name, "");
+        assert_eq!(v.codelist.len(), 2);
+
+        let cl0 = &v.codelist[0];
+        assert_eq!(cl0.code, "C141657");
+        assert!(!cl0.extensible);
+        assert_eq!(cl0.name, "Ten-Meter Walk/Run Test Code");
+        assert_eq!(cl0.submission_value, "TENMW1TC");
+        assert_eq!(cl0.code_list.len(), 2);
+
+        let item0 = &cl0.code_list[0];
+        assert_eq!(item0.code, "C174106");
+        assert_eq!(item0.submission_value, "TENMW101");
+        assert_eq!(item0.synonym, "synB");
+
+        let cl1 = &v.codelist[1];
+        assert_eq!(cl1.code, "C141656");
+        assert!(cl1.extensible);
+        assert_eq!(cl1.code_list.len(), 1);
+        assert_eq!(cl1.code_list[0].code, "C141701");
+    }
+
+    #[test]
+    fn parse_range_trims_string_cells() {
+        let range = range_from_rows(vec![
+            vec![s("Code"), empty(), empty(), empty(), empty(), empty(), empty(), empty()],
+            vec![
+                s(" C1 "),
+                empty(),
+                s(" No "),
+                s(" Name "),
+                s(" SV "),
+                s(" Syn "),
+                s(" Def "),
+                s(" NCI "),
+            ],
+        ]);
+        let v = parse_range("src.xls", "SDTM Terminology 2026-03-27", &range).expect("parse");
+        let cl = &v.codelist[0];
+        assert_eq!(cl.code, "C1");
+        assert_eq!(cl.extensible, false);
+        assert_eq!(cl.name, "Name");
+        assert_eq!(cl.submission_value, "SV");
+        assert_eq!(cl.synonym, "Syn");
+    }
+
+    #[test]
+    fn parse_range_handles_numeric_cells_in_text_columns() {
+        // Some CDISC workbooks render the Code column as a numeric cell rather
+        // than a string. The helper must accept either form.
+        let range = range_from_rows(vec![
+            vec![empty(); 8],
+            vec![
+                Data::Int(254_467),
+                empty(),
+                s("No"),
+                s("Test"),
+                s("TST"),
+                empty(),
+                empty(),
+                empty(),
+            ],
+        ]);
+        let v = parse_range("src.xls", "SDTM Terminology 2026-03-27", &range).expect("parse");
+        assert_eq!(v.codelist[0].code, "254467");
+    }
+
+    #[test]
+    fn parse_range_wraps_unsupported_cell_in_bad_row_error() {
+        let range = range_from_rows(vec![
+            vec![empty(); 8],
+            vec![
+                Data::Bool(true), // not a valid cell type
+                empty(),
+                s("No"),
+                s("Test"),
+                s("TST"),
+                empty(),
+                empty(),
+                empty(),
+            ],
+        ]);
+        let err = parse_range("src.xls", "SDTM Terminology 2026-03-27", &range).unwrap_err();
+        match err {
+            TerminologyError::BadRow { sheet, row, message } => {
+                assert_eq!(sheet, "SDTM Terminology 2026-03-27");
+                assert_eq!(row, 2); // 1-indexed; header is row 1, this is row 2
+                assert!(message.contains("unsupported cell kind"), "got: {message}");
+            }
+            other => panic!("expected BadRow, got {other:?}"),
+        }
     }
 }
