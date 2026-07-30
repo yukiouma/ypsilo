@@ -1132,21 +1132,11 @@ Replace `crates/terminology/src/lib.rs` with:
 //! a [`TerminologyVersion`] containing all the [`CodeList`]s and their
 //! [`CodeItem`]s.
 
-use std::fs::File;
-use std::io::{Read, Seek};
-use std::path::Path;
-
-use calamine::{open_workbook_auto, Data, Range, Reader};
-
 mod loader;
 mod model;
 
 pub use loader::{from_bytes, from_path, from_reader};
 pub use model::{CodeItem, CodeList, TerminologyError, TerminologyVersion};
-
-// The `pub use loader::{from_bytes, from_path, from_reader}` re-export above is
-// satisfied by re-declaring the entry points in `loader.rs` (see Task 7 step
-// 2). This avoids leaking helper modules into the public API.
 ```
 
 Then add the implementation to `crates/terminology/src/loader.rs` (right below `parse_range_with_date`):
@@ -1157,50 +1147,42 @@ use std::io::{Read, Seek};
 use std::path::Path;
 
 use calamine::{open_workbook_auto, Data, Range, Reader};
+use crate::model::{CodeItem, CodeList, TerminologyError, TerminologyVersion};
 
 /// Open a workbook at `path`, find the matching terminology sheet, and
 /// deserialise it.
 pub fn from_path<P: AsRef<Path>>(path: P) -> Result<TerminologyVersion, TerminologyError> {
     let path_ref = path.as_ref();
     let source = path_ref.display().to_string();
-    let mut workbook = open_workbook_auto(path_ref).map_err(|source| TerminologyError::Io {
+    // Open the file with `std::fs::File` first so a missing-file error
+    // surfaces as `TerminologyError::Io` rather than being wrapped in
+    // `TerminologyError::Workbook(calamine::Error)`.
+    let file = File::open(path_ref).map_err(|err| TerminologyError::Io {
         path: source.clone(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, source),
+        source: err,
     })?;
-    read_workbook(&mut workbook, &source)
+    read_workbook(file, &source)
 }
 
-/// Open a workbook from an arbitrary reader, find the matching terminology
-/// sheet, and deserialise it.
-pub fn from_reader<R: Read + Seek>(mut reader: R) -> Result<TerminologyVersion, TerminologyError> {
-    let mut buf = Vec::new();
-    reader
-        .read_to_end(&mut buf)
-        .map_err(|source| TerminologyError::Io {
-            path: String::new(),
-            source,
-        })?;
-    from_bytes(&buf)
+/// Open a workbook from an arbitrary `Read + Seek` reader.
+pub fn from_reader<R: Read + Seek>(reader: R) -> Result<TerminologyVersion, TerminologyError> {
+    read_workbook(reader, "")
 }
 
 /// Open a workbook from an in-memory byte slice.
 pub fn from_bytes(bytes: &[u8]) -> Result<TerminologyVersion, TerminologyError> {
-    let source = String::new();
     let cursor = std::io::Cursor::new(bytes.to_vec());
-    let mut workbook = open_workbook_auto_from_reader(cursor)?;
-    read_workbook(&mut workbook, &source)
+    read_workbook(cursor, "")
 }
 
-fn open_workbook_auto_from_reader<R: Read + Seek>(
-    reader: R,
-) -> Result<calamine::Sheets<R>, TerminologyError> {
-    open_workbook_auto(reader).map_err(TerminologyError::from)
-}
-
+/// Open `reader` with `calamine::open_workbook_auto`, pick the matching sheet,
+/// and deserialise it. `source` is the path string used in error messages; it
+/// is `""` for the in-memory entry points.
 fn read_workbook<R: Read + Seek>(
-    workbook: &mut calamine::Sheets<R>,
+    reader: R,
     source: &str,
 ) -> Result<TerminologyVersion, TerminologyError> {
+    let mut workbook = open_workbook_auto(reader).map_err(TerminologyError::from)?;
     let sheet_names: Vec<String> = workbook.sheet_names().to_vec();
     let (sheet_name, date) = select_sheet(&sheet_names, source)?;
     let range: Range<Data> = workbook
@@ -1208,19 +1190,9 @@ fn read_workbook<R: Read + Seek>(
         .map_err(TerminologyError::from)?;
     parse_range_with_date(source, sheet_name, &date, &range)
 }
-
-// Keep the `from_path` entry point's I/O error mapping correct: calamine
-// returns a `calamine::Error` for *workbook* failures (corrupt file, etc.),
-// but a missing file at the OS level surfaces before we hand the path to
-// calamine. Wrap `std::io::Error` separately in `from_path`.
-fn _unused_file() -> File {
-    File::open("/dev/null").expect("placeholder")
-}
 ```
 
-> **Adapter note:** `calamine::open_workbook_auto` accepts anything that implements `Reader` (a trait calamine provides for path-like and reader-like inputs). On calamine 0.35, the concrete return type for a reader-backed workbook is a generic type parameterised by the reader; the code above writes it as `calamine::Sheets<R>` for clarity. If the compiler complains that `Sheets` is not a public type name, replace the explicit type with `_` and let inference pick the concrete type.
-
-> The `_unused_file` helper at the bottom is a workaround so the `use std::fs::File;` import is not flagged as unused — delete that helper and the `use std::fs::File;` line if the implementation does not need a `File`.
+> **Adapter note:** calamine 0.35's `open_workbook_auto` is generic over paths and readers — it accepts any `R: Read + Seek` and returns a concrete type that implements `Reader`. Do not name that concrete type explicitly; rely on type inference. The code above only names `Range<Data>` for the `worksheet_range` call, which is the public type from calamine.
 
 - [ ] **Step 2: Write the integration tests against the real `.xls` files**
 
@@ -1308,7 +1280,7 @@ cargo test -p terminology
 
 Expected: every test passes, including the four real-file integration tests and the strict-validation tests from Task 6.
 
-If `calamine::Sheets<R>` is not a nameable type, replace the explicit return type annotations in the helper functions with `_` and let type inference handle them. The only requirement is that `workbook.sheet_names()` returns a slice of `String` and `workbook.worksheet_range(name)` returns `Result<Range<Data>, calamine::Error>`.
+If `cargo` complains that `Reader` is unused (because calamine 0.35 might not require the explicit trait import when `open_workbook_auto` is generic over the reader), drop the `use calamine::Reader;` line. The `Range` and `Data` imports are required.
 
 - [ ] **Step 4: Commit**
 
