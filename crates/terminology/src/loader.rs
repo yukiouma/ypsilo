@@ -9,8 +9,9 @@ use calamine::{Data, Range, Reader, Sheets, open_workbook_auto, open_workbook_au
 /// Convert a single [`calamine::Data`] cell into a [`String`].
 ///
 /// Strings are trimmed. Numeric cells are rendered via `Display`. Empty cells
-/// become `""`. All other cell kinds (`Bool`, `DateTime`, `Error`) are rejected
-/// — terminology workbooks should never contain them.
+/// become `""`. All other cell kinds (`Bool`, `DateTime`, `DateTimeIso`,
+/// `DurationIso`, `Error`) are rejected — terminology workbooks should
+/// never contain them.
 fn cell_to_string(cell: &Data) -> Result<String, String> {
     match cell {
         Data::String(s) => Ok(s.trim().to_string()),
@@ -74,10 +75,11 @@ fn select_sheet<'a>(
 
 /// Parse every data row in `range` into a [`TerminologyVersion`].
 ///
-/// `source` is the path or other human-readable identifier used in error
-/// messages; `sheet_name` is the matched sheet name and is included in error
-/// variants that carry a sheet context. Row numbers reported in errors are
-/// 1-indexed and count the header row (so the first data row is row 2).
+/// `sheet_name` is the matched sheet name and is included in error variants
+/// that carry a sheet context. `source` is reserved for future I/O error
+/// enrichment (currently unused — the function operates purely on the
+/// already-parsed cells). Row numbers reported in errors are 1-indexed and
+/// count the header row (so the first data row is row 2).
 pub(crate) fn parse_range(
     _source: &str,
     sheet_name: &str,

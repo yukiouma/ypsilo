@@ -51,7 +51,8 @@ pub struct CodeItem {
     pub nci_preferred_term: String,
 }
 
-/// Errors returned by every [`crate::from_*`] entry point and by [`crate::loader`].
+/// Errors returned by every `from_path` / `from_reader` / `from_bytes` entry
+/// point and by the private `loader` module.
 #[derive(Debug, Error)]
 pub enum TerminologyError {
     #[error("I/O error reading {path}: {source}")]
