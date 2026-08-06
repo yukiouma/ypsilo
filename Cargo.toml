@@ -4,6 +4,7 @@ members = [
     "crates/entities",
     "crates/checklog",
     "crates/qc_result",
+    "crates/terminology",
 ]
 resolver = "2"
 
