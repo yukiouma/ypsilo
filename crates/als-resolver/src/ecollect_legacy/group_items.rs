@@ -30,12 +30,20 @@ pub fn parse_group_items(
         let item_name = row[18].to_string();
         let code_list_oid = row[20].to_string();
         let check_field_required_str = row[27].to_string();
+        let allowed_entry = row[29].to_string();
         let default_value = row[26].to_string();
 
         if form_oid.is_empty() || form_oid == "FormOID" {
             continue;
         }
         if item_oid.is_empty() {
+            continue;
+        }
+
+        // Filter out items where CheckFieldRequired is "Disable" AND AllowedEntry is "Y".
+        // Such items are non-variable fields the study explicitly disables, so they
+        // should not appear in the parsed CRF.
+        if check_field_required_str == "Disable" && allowed_entry == "Y" {
             continue;
         }
 
