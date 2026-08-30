@@ -53,7 +53,13 @@ pub fn parse_fields<R: std::io::BufRead>(
                 match e.name().as_ref() {
                     b"Row" => {
                         // Process completed row (skip header row)
-                        if current_row.len() >= 37 && current_row[0] != "FormOID" {
+                        if current_row.len() >= 37
+                            && current_row[0] != "FormOID"
+                            // Skip fields whose ViewRestrictions column (index 41,
+                            // column AP) is populated — those fields are restricted
+                            // to specific roles and should not appear in the CRF.
+                            && current_row.get(41).is_none_or(|v| v.is_empty())
+                        {
                             let form_oid = current_row[0].clone();
                             let field_oid = current_row[1].clone();
                             let _ordinal = current_row[2].parse::<i32>().unwrap_or(0);
@@ -208,11 +214,22 @@ mod tests {
     /// Build a Fields row of at least 37 cells (the minimum the parser accepts)
     /// where every cell is empty except for the columns the parser reads.
     fn build_row_xml(pre_text: &str, form_oid: &str, field_oid: &str) -> String {
-        // 37 cells; every cell has a <Data> element (matches real SpreadsheetML).
-        // Indices: 0 FormOID, 1 FieldOID, 2 Ordinal, 4 DraftFieldName,
-        //          6 VariableOID, 7 DataFormat, 8 DataDictionaryName,
-        //          11 ControlType, 14 PreText, 15 FixedUnit
-        let mut cells: Vec<String> = (0..37).map(|_| String::from("<Cell><Data></Data></Cell>")).collect();
+        build_row_xml_with_view_restrictions(pre_text, form_oid, field_oid, None)
+    }
+
+    /// Same as `build_row_xml` but lets the caller set the ViewRestrictions
+    /// column (index 41). The row is padded to 42 cells when a value is
+    /// supplied so the filter actually has something to inspect.
+    fn build_row_xml_with_view_restrictions(
+        pre_text: &str,
+        form_oid: &str,
+        field_oid: &str,
+        view_restrictions: Option<&str>,
+    ) -> String {
+        let target_len = if view_restrictions.is_some() { 42 } else { 37 };
+        let mut cells: Vec<String> = (0..target_len)
+            .map(|_| String::from("<Cell><Data></Data></Cell>"))
+            .collect();
         cells[0] = format!("<Cell><Data>{form_oid}</Data></Cell>");
         cells[1] = format!("<Cell><Data>{field_oid}</Data></Cell>");
         cells[2] = String::from("<Cell><Data>1</Data></Cell>");
@@ -224,6 +241,13 @@ mod tests {
             .replace('<', "&lt;")
             .replace('>', "&gt;");
         cells[14] = format!("<Cell><Data>{escaped}</Data></Cell>");
+        if let Some(vr) = view_restrictions {
+            let escaped_vr = vr
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;");
+            cells[41] = format!("<Cell><Data>{escaped_vr}</Data></Cell>");
+        }
         format!("<Row>{}</Row>", cells.join(""))
     }
 
@@ -275,5 +299,52 @@ mod tests {
         assert_eq!(form.items.len(), 1);
         assert_eq!(form.items[0].label, "Visit Date");
         assert_eq!(form.items[0].name, "SVDAT");
+    }
+
+    #[test]
+    fn field_with_view_restrictions_is_filtered_out() {
+        // Column AP (index 41) is "ViewRestrictions". When populated, the
+        // field is restricted to specific roles and must not be added to
+        // the form's items.
+        let xml = build_row_xml_with_view_restrictions(
+            "Restricted Field",
+            "SV",
+            "SVRESTRICTED",
+            Some("Investigator"),
+        );
+        let mut reader = Reader::from_str(&xml);
+        reader.config_mut().trim_text(true);
+        let mut context = make_context("SV");
+
+        parse_fields(&mut reader, &mut context).unwrap();
+
+        let form = context.forms.get("SV").unwrap();
+        assert!(
+            form.items.is_empty(),
+            "field with ViewRestrictions must be filtered out, got {} item(s)",
+            form.items.len()
+        );
+    }
+
+    #[test]
+    fn field_with_empty_view_restrictions_is_kept() {
+        // A blank ViewRestrictions cell means the field is not restricted
+        // and must be added normally.
+        let xml = build_row_xml_with_view_restrictions(
+            "Open Field",
+            "SV",
+            "SVOPEN",
+            Some(""),
+        );
+        let mut reader = Reader::from_str(&xml);
+        reader.config_mut().trim_text(true);
+        let mut context = make_context("SV");
+
+        parse_fields(&mut reader, &mut context).unwrap();
+
+        let form = context.forms.get("SV").unwrap();
+        assert_eq!(form.items.len(), 1);
+        assert_eq!(form.items[0].label, "Open Field");
+        assert_eq!(form.items[0].name, "SVOPEN");
     }
 }
