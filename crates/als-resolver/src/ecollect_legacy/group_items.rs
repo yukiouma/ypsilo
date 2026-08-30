@@ -1,4 +1,4 @@
-use calamine::{open_workbook_from_rs, Reader, Xlsx, XlsxError};
+use calamine::{Reader, Xlsx, XlsxError, open_workbook_from_rs};
 use entities::project::{CRFItem, ControlType, ItemOption};
 use std::io::{Read, Seek};
 
@@ -30,7 +30,6 @@ pub fn parse_group_items(
         let item_name = row[18].to_string();
         let code_list_oid = row[20].to_string();
         let check_field_required_str = row[27].to_string();
-        let allowed_entry = row[29].to_string();
         let default_value = row[26].to_string();
 
         if form_oid.is_empty() || form_oid == "FormOID" {
@@ -43,7 +42,7 @@ pub fn parse_group_items(
         // Filter out items where CheckFieldRequired is "Disable" AND AllowedEntry is "Y".
         // Such items are non-variable fields the study explicitly disables, so they
         // should not appear in the parsed CRF.
-        if check_field_required_str == "Disable" && allowed_entry == "Y" {
+        if display_mode == "Hidden" {
             continue;
         }
 
@@ -77,7 +76,7 @@ pub fn parse_group_items(
         let control_type = match display_mode.as_str() {
             "RadioButton" => ControlType::SELECTION,
             "CheckBox" => ControlType::CHECKBOX,
-            "DropDown" | "ComboBox" => ControlType::SELECTION,
+            "DropDownList" => ControlType::SELECTION,
             "TextField" => ControlType::TEXT,
             "Date" => ControlType::DATETIME,
             "File" => ControlType::TEXT,
