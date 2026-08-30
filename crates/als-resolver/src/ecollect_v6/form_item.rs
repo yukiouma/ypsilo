@@ -37,8 +37,17 @@ pub fn parse_form_item(reader: impl Read + Seek, context: &mut EcollectParseCont
         // Resolve control_type
         let (control_type, not_variable) = map_control_type(&item_def.control_type);
 
-        // Resolve item_option
-        let item_option = resolve_item_option(&item_def.code_list_oid, &item_def.control_type, row.get(19).map(|c: &Data| c.to_string()).as_deref(), context);
+        // Resolve item_option from FormItem's own DefaultValue (col P) and
+        // CodeListOID (col AU). The Items.CodeListOID is empty for Lab Test
+        // items, so we must read these columns directly from FormItem.
+        let default_value = row.get(15).map(|c: &Data| c.to_string());
+        let code_list_oid_raw = row.get(46).map(|c: &Data| c.to_string());
+        let item_option = resolve_item_option(
+            &item_def.control_type,
+            default_value.as_deref(),
+            code_list_oid_raw.as_deref(),
+            context,
+        );
 
         // Resolve item_unit
         let item_unit = resolve_item_unit(&item_def.unit_group_oid, context);
@@ -87,33 +96,41 @@ fn map_control_type(ct: &str) -> (ControlType, Option<bool>) {
     }
 }
 
-/// Resolve item_option from CodeListOID, Lab Test, or Lab Result.
+/// Resolve item_option from FormItem's DefaultValue (Lab Test / Lab Result)
+/// or CodeListOID (other selection items). The Items.CodeListOID column is
+/// empty for Lab Test items, so the FormItem row is the source of truth.
 fn resolve_item_option(
-    code_list_oid: &Option<String>,
     control_type: &str,
     default_value: Option<&str>,
+    code_list_oid: Option<&str>,
     context: &EcollectParseContext,
 ) -> Option<Vec<ItemOption>> {
     match control_type {
         "Lab Test" | "Lab Result" => {
-            // Use DefaultValue as analyte code to look up AnalytesInTheStudy
-            if let Some(dv) = default_value {
-                if let Some(analyte_name) = context.analytes.get(dv) {
-                    return Some(vec![ItemOption {
+            // DefaultValue carries analyte codes separated by "|", e.g.
+            // "TSH_A|T3FR_A|T4FR_A". Resolve each via AnalytesInTheStudy.
+            let Some(dv) = default_value else { return None };
+            let mut options = Vec::new();
+            for code in dv.split('|') {
+                let code = code.trim();
+                if code.is_empty() {
+                    continue;
+                }
+                if let Some(analyte_name) = context.analytes.get(code) {
+                    options.push(ItemOption {
                         option_display: analyte_name.clone(),
                         annotations: Vec::new(),
-                    }]);
+                    });
                 }
             }
-            None
+            if options.is_empty() { None } else { Some(options) }
         }
         _ => {
-            // Use CodeListOID lookup
-            if let Some(oid) = code_list_oid {
-                context.code_list_options.get(oid).cloned()
-            } else {
-                None
-            }
+            // CodeListOID may be compound like "YN=[1|是,2|否]"; take the part
+            // before the first "=" as the code list key.
+            let Some(raw) = code_list_oid else { return None };
+            let oid = EcollectParseContext::split_oid(raw);
+            context.code_list_options.get(oid).cloned()
         }
     }
 }

@@ -171,6 +171,87 @@ fn test_parse_ecollect_v6_als_item_options() {
 }
 
 #[test]
+fn test_parse_ecollect_v6_als_lab_test_options() {
+    let Some(bytes) = read_ecollect_v6_bytes() else {
+        eprintln!("Skipping - mock data not found");
+        return;
+    };
+
+    let project = parse_ecollect_v6_als(Cursor::new(bytes)).unwrap();
+
+    // Lab Test items must resolve to a non-empty option list sourced from
+    // AnalytesInTheStudy. FormItem.DefaultValue holds the analyte codes
+    // separated by '|'.
+    let lab_test_items: Vec<_> = project
+        .forms
+        .iter()
+        .flat_map(|f| f.items.iter())
+        .filter(|i| i.name == "LBTEST")
+        .collect();
+
+    assert!(
+        !lab_test_items.is_empty(),
+        "Expected at least one LBTEST (Lab Test) item across all forms"
+    );
+
+    for item in &lab_test_items {
+        let options = item
+            .item_option
+            .as_ref()
+            .unwrap_or_else(|| panic!("LBTEST item {} should have item_option populated", item.name));
+        assert!(
+            options.len() > 1,
+            "LBTEST item {} should resolve multiple analyte options, got {}",
+            item.name,
+            options.len()
+        );
+        for opt in options {
+            assert!(
+                !opt.option_display.is_empty(),
+                "Lab Test option display should not be empty for {}",
+                item.name
+            );
+        }
+    }
+}
+
+#[test]
+fn test_parse_ecollect_v6_als_form_item_codelist_oid_resolution() {
+    let Some(bytes) = read_ecollect_v6_bytes() else {
+        eprintln!("Skipping - mock data not found");
+        return;
+    };
+
+    let project = parse_ecollect_v6_als(Cursor::new(bytes)).unwrap();
+
+    // Selection items sourced via FormItem.CodeListOID (e.g. "YN=[1|是,2|否]")
+    // must resolve options from CodeListItems. Look for SVPERF, whose FormItem
+    // CodeListOID references the "YN" codelist.
+    let svperf_items: Vec<_> = project
+        .forms
+        .iter()
+        .flat_map(|f| f.items.iter())
+        .filter(|i| i.name == "SVPERF")
+        .collect();
+
+    assert!(
+        !svperf_items.is_empty(),
+        "Expected at least one SVPERF selection item"
+    );
+
+    for item in &svperf_items {
+        let options = item.item_option.as_ref().unwrap_or_else(|| {
+            panic!("SVPERF item {} should have item_option populated", item.name)
+        });
+        assert!(
+            options.len() >= 2,
+            "SVPERF should resolve YN code list with at least 2 options, got {}",
+            options.len()
+        );
+    }
+}
+
+#[test]
 fn test_parse_ecollect_v6_als_form_count() {
     let Some(bytes) = read_ecollect_v6_bytes() else {
         eprintln!("Skipping - mock data not found");
