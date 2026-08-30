@@ -77,13 +77,15 @@ pub fn parse_fields<R: std::io::BufRead>(
                                 None
                             };
 
-                            // Map control type string to ControlType enum
+                            // Map control type string to ControlType enum.
+                            // The keys here are the literal strings produced by RAVE in the
+                            // Fields worksheet; anything unrecognized falls back to TEXT.
                             let control_type = match control_type_str.as_str() {
-                                "Text" => ControlType::TEXT,
-                                "Select" => ControlType::SELECTION,
-                                "Check" => ControlType::CHECKBOX,
-                                "Radio" => ControlType::SELECTION,
-                                "File" => ControlType::TEXT,
+                                "DateTime" => ControlType::DATETIME,
+                                "CheckBox" => ControlType::CHECKBOX,
+                                "DropDownList" => ControlType::SELECTION,
+                                "RadioButton" => ControlType::SELECTION,
+                                "RadioButton (Vertical)" => ControlType::SELECTION,
                                 _ => ControlType::TEXT,
                             };
 
