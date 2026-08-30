@@ -24,6 +24,11 @@ pub fn parse_form_item(reader: impl Read + Seek, context: &mut EcollectParseCont
             continue;
         }
 
+        // Filter out bindings where ItemViewRestriction (column AG, index 32) is "isAll".
+        if row.get(32).map(|c| c.to_string()).as_deref() == Some("isAll") {
+            continue;
+        }
+
         // Look up item definition
         let Some(item_def) = context.item_definitions.get(&item_oid) else {
             continue;
