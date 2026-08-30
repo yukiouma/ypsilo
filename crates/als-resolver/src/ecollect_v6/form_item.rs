@@ -1,26 +1,42 @@
-use calamine::{open_workbook_from_rs, Reader, Xlsx, Data};
 use crate::ecollect_v6::context::EcollectParseContext;
+use calamine::{Data, Reader, Xlsx, open_workbook_from_rs};
 use entities::project::{CRFItem, ControlType, ItemOption, ItemUnit};
 use std::io::{Read, Seek};
 
 /// Parse FormItem worksheet and populate form.items with CRFItems.
 /// For each row, look up ItemOID in item_definitions, create CRFItem with
 /// ControlType mapping, CodeList/Lab Test options, unit resolution.
-pub fn parse_form_item(reader: impl Read + Seek, context: &mut EcollectParseContext) -> Result<(), crate::AlsParseError> {
-    let mut workbook: Xlsx<_> = open_workbook_from_rs(reader).map_err(|e: calamine::XlsxError| crate::AlsParseError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+pub fn parse_form_item(
+    reader: impl Read + Seek,
+    context: &mut EcollectParseContext,
+) -> Result<(), crate::AlsParseError> {
+    let mut workbook: Xlsx<_> =
+        open_workbook_from_rs(reader).map_err(|e: calamine::XlsxError| {
+            crate::AlsParseError::IoError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
-    let range = workbook.worksheet_range("FormItem")
+    let range = workbook
+        .worksheet_range("FormItem")
         .map_err(|_| crate::AlsParseError::WorksheetNotFound("FormItem".to_string()))?;
 
     // First row is header, skip it
     for row in range.rows().skip(1) {
         let row: &[Data] = row;
-        if row.len() < 3 { continue; }
+        if row.len() < 3 {
+            continue;
+        }
 
         let form_oid = row[0].to_string();
         let item_oid = row[2].to_string();
 
-        if form_oid.is_empty() || form_oid == "FormOID" || item_oid.is_empty() || item_oid == "ItemOID" {
+        if form_oid.is_empty()
+            || form_oid == "FormOID"
+            || item_oid.is_empty()
+            || item_oid == "ItemOID"
+        {
             continue;
         }
 
@@ -89,7 +105,7 @@ fn map_control_type(ct: &str) -> (ControlType, Option<bool>) {
         "Check" => (ControlType::CHECKBOX, None),
         "Tags" => (ControlType::TEXT, Some(true)),
         "Lab Test" => (ControlType::SELECTION, None),
-        "Lab Result" => (ControlType::SELECTION, None),
+        "Lab Result" => (ControlType::TEXT, None),
         "Calendar" => (ControlType::TEXT, None),
         "Dynamic Options" => (ControlType::TEXT, None),
         _ => (ControlType::TEXT, None),
@@ -106,7 +122,7 @@ fn resolve_item_option(
     context: &EcollectParseContext,
 ) -> Option<Vec<ItemOption>> {
     match control_type {
-        "Lab Test" | "Lab Result" => {
+        "Lab Test" => {
             // DefaultValue carries analyte codes separated by "|", e.g.
             // "TSH_A|T3FR_A|T4FR_A". Resolve each via AnalytesInTheStudy.
             let Some(dv) = default_value else { return None };
@@ -123,12 +139,18 @@ fn resolve_item_option(
                     });
                 }
             }
-            if options.is_empty() { None } else { Some(options) }
+            if options.is_empty() {
+                None
+            } else {
+                Some(options)
+            }
         }
         _ => {
             // CodeListOID may be compound like "YN=[1|是,2|否]"; take the part
             // before the first "=" as the code list key.
-            let Some(raw) = code_list_oid else { return None };
+            let Some(raw) = code_list_oid else {
+                return None;
+            };
             let oid = EcollectParseContext::split_oid(raw);
             context.code_list_options.get(oid).cloned()
         }
