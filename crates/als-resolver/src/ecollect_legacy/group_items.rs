@@ -74,13 +74,18 @@ pub fn parse_group_items(
         };
 
         let control_type = match display_mode.as_str() {
-            "RadioButton" => ControlType::SELECTION,
             "CheckBox" => ControlType::CHECKBOX,
+            "DateTime" => ControlType::DATETIME,
+            "RadioButton" => ControlType::SELECTION,
+            "RadioButton(Vertical)" => ControlType::SELECTION,
             "DropDownList" => ControlType::SELECTION,
-            "TextField" => ControlType::TEXT,
-            "Date" => ControlType::DATETIME,
-            "File" => ControlType::TEXT,
             "AnalytesOption" => ControlType::SELECTION,
+            "TextField" => ControlType::TEXT,
+            "Label" => ControlType::TEXT,
+            "DynamicOptions" => ControlType::TEXT,
+            "LongText" => ControlType::TEXT,
+            "Number" => ControlType::TEXT,
+            "AnalytesResult" => ControlType::TEXT,
             _ => ControlType::TEXT,
         };
 
