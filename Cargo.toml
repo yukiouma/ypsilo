@@ -4,7 +4,7 @@ members = [
     "crates/entities",
     "crates/checklog",
     "crates/qc_result",
-    "crates/terminology",
+    "crates/terminology", "crates/project-scaffold",
 ]
 resolver = "2"
 
@@ -15,6 +15,7 @@ thiserror = "2.0.18"
 regex = "1.13.0"
 tempfile = "3.27.0"
 serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.154"
 resolver = "2"
 lazy_static = "1.5.0"
 scraper = "0.27.0"
