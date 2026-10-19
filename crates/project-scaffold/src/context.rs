@@ -82,7 +82,10 @@ impl Context {
             ("product".to_string(), self.product.clone()),
             ("trial".to_string(), self.trial.clone()),
             ("purpose".to_string(), self.purpose.clone()),
-            ("root_path".to_string(), self.root_path.display().to_string()),
+            (
+                "root_path".to_string(),
+                self.root_path.display().to_string(),
+            ),
             (
                 "project_root".to_string(),
                 self.project_root.display().to_string(),
