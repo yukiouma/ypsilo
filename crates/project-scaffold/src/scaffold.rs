@@ -14,12 +14,32 @@ pub fn build_tree(nodes: &[Node], base: &Path) -> Result<()> {
 fn create_node(node: &Node, base: &Path) -> Result<()> {
     let target = base.join(&node.name);
 
+    if let Some(reference) = &node.reference {
+        return copy_reference(reference, &target);
+    }
+
     if node.directory {
         create_dir(&target)?;
         return build_tree(&node.children, &target);
     }
 
     create_file(&target)
+}
+
+/// Copy `reference` to `target`, leaving an existing target alone.
+fn copy_reference(reference: &Path, target: &Path) -> Result<()> {
+    if !reference.exists() {
+        return Err(ScaffoldError::ReferenceNotFound(reference.to_path_buf()));
+    }
+    if target.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = target.parent() {
+        create_dir(parent)?;
+    }
+    fs::copy(reference, target)
+        .map(|_| ())
+        .map_err(|e| ScaffoldError::io(target, e))
 }
 
 fn create_dir(path: &Path) -> Result<()> {
@@ -42,7 +62,7 @@ fn create_file(path: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::ScaffoldError;
-    use std::fs;
+    use std::{fs, path::Path};
     use tempfile::TempDir;
 
     fn dir(name: &str) -> Node {
@@ -154,5 +174,88 @@ mod tests {
 
         assert!(matches!(err, ScaffoldError::Io { .. }));
         assert!(err.to_string().contains("specs"));
+    }
+
+    fn reference_node(name: &str, reference: &Path) -> Node {
+        Node {
+            name: name.to_string(),
+            directory: false,
+            reference: Some(reference.to_path_buf()),
+            migration: None,
+            children: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn copies_a_reference_file_to_its_configured_name() {
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        fs::write(src.path().join("template v1.0.xlsx"), b"workbook").unwrap();
+
+        build_tree(
+            &[reference_node(
+                "AK-XX SDTM Specification v1.0.xlsx",
+                &src.path().join("template v1.0.xlsx"),
+            )],
+            dst.path(),
+        )
+        .unwrap();
+
+        let copied = dst.path().join("AK-XX SDTM Specification v1.0.xlsx");
+        assert_eq!(fs::read(&copied).unwrap(), b"workbook");
+    }
+
+    #[test]
+    fn creates_the_parent_directory_for_a_reference_file() {
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        fs::write(src.path().join("template.xlsx"), b"x").unwrap();
+
+        build_tree(
+            &[reference_node(
+                "template.xlsx",
+                &src.path().join("template.xlsx"),
+            )],
+            &dst.path().join("specs"),
+        )
+        .unwrap();
+
+        assert!(dst.path().join("specs").join("template.xlsx").is_file());
+    }
+
+    #[test]
+    fn errors_when_the_reference_source_is_missing() {
+        let dst = TempDir::new().unwrap();
+        let err = build_tree(
+            &[reference_node(
+                "out.xlsx",
+                Path::new("/nonexistent/template.xlsx"),
+            )],
+            dst.path(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, ScaffoldError::ReferenceNotFound(_)));
+    }
+
+    #[test]
+    fn does_not_overwrite_an_existing_copied_file() {
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        fs::write(src.path().join("template.xlsx"), b"fresh").unwrap();
+        fs::write(dst.path().join("template.xlsx"), b"edited").unwrap();
+
+        build_tree(
+            &[reference_node(
+                "template.xlsx",
+                &src.path().join("template.xlsx"),
+            )],
+            dst.path(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(dst.path().join("template.xlsx")).unwrap(),
+            b"edited"
+        );
     }
 }
