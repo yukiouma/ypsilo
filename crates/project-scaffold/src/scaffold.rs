@@ -1,4 +1,8 @@
-use crate::{Result, config::Node, error::ScaffoldError};
+use crate::{
+    Result,
+    config::{Migration, Node},
+    error::ScaffoldError,
+};
 use std::{fs, path::Path};
 
 /// Materialise `nodes` beneath `base`.
@@ -14,6 +18,10 @@ pub fn build_tree(nodes: &[Node], base: &Path) -> Result<()> {
 fn create_node(node: &Node, base: &Path) -> Result<()> {
     let target = base.join(&node.name);
 
+    if let Some(migration) = &node.migration {
+        return copy_migration(migration, &target);
+    }
+
     if let Some(reference) = &node.reference {
         return copy_reference(reference, &target);
     }
@@ -24,6 +32,48 @@ fn create_node(node: &Node, base: &Path) -> Result<()> {
     }
 
     create_file(&target)
+}
+
+/// Copy the immediate children of `migration.directory` whose extension is in
+/// `migration.filter` into `target`, which is created if absent.
+///
+/// The source directory is not searched recursively.
+fn copy_migration(migration: &Migration, target: &Path) -> Result<()> {
+    let source: &Path = &migration.directory;
+    if !source.exists() {
+        return Err(ScaffoldError::MigrationDirNotFound(source.to_path_buf()));
+    }
+
+    create_dir(target)?;
+
+    let entries = fs::read_dir(source).map_err(|e| ScaffoldError::io(source, e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| ScaffoldError::io(source, e))?;
+        let path = entry.path();
+
+        if !path.is_file() || !extension_is_allowed(&path, &migration.filter) {
+            continue;
+        }
+
+        let destination = target.join(entry.file_name());
+        if destination.exists() {
+            continue;
+        }
+        fs::copy(&path, &destination)
+            .map(|_| ())
+            .map_err(|e| ScaffoldError::io(&destination, e))?;
+    }
+
+    Ok(())
+}
+
+/// Whether `path`'s extension appears in `filter`. Filter entries carry a leading dot.
+fn extension_is_allowed(path: &Path, filter: &[String]) -> bool {
+    let Some(extension) = path.extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    let extension = format!(".{extension}");
+    filter.iter().any(|allowed| allowed == &extension)
 }
 
 /// Copy `reference` to `target`, leaving an existing target alone.
@@ -61,7 +111,7 @@ fn create_file(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ScaffoldError;
+    use crate::{ScaffoldError, config::Migration};
     use std::{fs, path::Path};
     use tempfile::TempDir;
 
@@ -257,5 +307,114 @@ mod tests {
             fs::read(dst.path().join("template.xlsx")).unwrap(),
             b"edited"
         );
+    }
+    fn migration_node(name: &str, directory: &Path, filter: &[&str]) -> Node {
+        Node {
+            name: name.to_string(),
+            directory: true,
+            reference: None,
+            migration: Some(Migration {
+                directory: directory.to_path_buf(),
+                filter: filter.iter().map(|f| f.to_string()).collect(),
+            }),
+            children: Vec::new(),
+        }
+    }
+
+    /// A source directory holding two `.sas` files, one `.xlsx`, and a subdirectory.
+    fn general_marcos_fixtures() -> TempDir {
+        let src = TempDir::new().unwrap();
+        fs::write(src.path().join("m-forest-v1-0.sas"), b"macro").unwrap();
+        fs::write(src.path().join("m-seriesplot-v1-0 .sas"), b"macro").unwrap();
+        fs::write(src.path().join("Macro category information.xlsx"), b"book").unwrap();
+        fs::create_dir(src.path().join("nested")).unwrap();
+        fs::write(src.path().join("nested").join("deep-v1.sas"), b"deep").unwrap();
+        src
+    }
+
+    #[test]
+    fn copies_only_files_matching_the_extension_filter() {
+        let src = general_marcos_fixtures();
+        let dst = TempDir::new().unwrap();
+
+        build_tree(
+            &[migration_node("macros", src.path(), &[".sas"])],
+            dst.path(),
+        )
+        .unwrap();
+
+        let macros = dst.path().join("macros");
+        assert!(macros.is_dir());
+        assert!(macros.join("m-forest-v1-0.sas").is_file());
+        assert!(macros.join("m-seriesplot-v1-0 .sas").is_file());
+        assert!(!macros.join("Macro category information.xlsx").exists());
+    }
+
+    #[test]
+    fn does_not_recurse_into_subdirectories_of_the_source() {
+        let src = general_marcos_fixtures();
+        let dst = TempDir::new().unwrap();
+
+        build_tree(
+            &[migration_node("macros", src.path(), &[".sas"])],
+            dst.path(),
+        )
+        .unwrap();
+
+        assert!(!dst.path().join("macros").join("nested").exists());
+    }
+
+    #[test]
+    fn creates_an_empty_directory_when_nothing_matches_the_filter() {
+        let src = general_marcos_fixtures();
+        let dst = TempDir::new().unwrap();
+
+        build_tree(
+            &[migration_node("macros", src.path(), &[".txt"])],
+            dst.path(),
+        )
+        .unwrap();
+
+        let macros = dst.path().join("macros");
+        assert!(macros.is_dir());
+        assert_eq!(fs::read_dir(&macros).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn leaves_already_migrated_files_alone() {
+        let src = general_marcos_fixtures();
+        let dst = TempDir::new().unwrap();
+        fs::create_dir(dst.path().join("macros")).unwrap();
+        fs::write(
+            dst.path().join("macros").join("m-forest-v1-0.sas"),
+            b"local edit",
+        )
+        .unwrap();
+
+        build_tree(
+            &[migration_node("macros", src.path(), &[".sas"])],
+            dst.path(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(dst.path().join("macros").join("m-forest-v1-0.sas")).unwrap(),
+            b"local edit"
+        );
+    }
+
+    #[test]
+    fn errors_when_the_migration_source_is_missing() {
+        let dst = TempDir::new().unwrap();
+        let err = build_tree(
+            &[migration_node(
+                "macros",
+                Path::new("/nonexistent/macros"),
+                &[".sas"],
+            )],
+            dst.path(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, ScaffoldError::MigrationDirNotFound(_)));
     }
 }
