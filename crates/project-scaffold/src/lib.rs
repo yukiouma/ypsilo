@@ -1,14 +1,26 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Scaffold the directory tree of a clinical trial data processing project.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod config;
+mod context;
+mod error;
+mod scaffold;
+mod template;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub use config::{Migration, Node, ProjectScaffoldConfig};
+pub use context::{Context, RawContext};
+pub use error::ScaffoldError;
+
+use std::path::PathBuf;
+
+/// Result type for every fallible operation in this crate.
+pub type Result<T> = std::result::Result<T, ScaffoldError>;
+
+/// Materialise the project scaffold described by `config`.
+///
+/// Every path in `config` has already had its `{{ ... }}` placeholders resolved by
+/// [`ProjectScaffoldConfig::build`]. Paths that already exist are left untouched, so
+/// calling this twice over the same project root is a no-op.
+pub fn project_scaffolding(config: ProjectScaffoldConfig) -> Result<()> {
+    let root = PathBuf::from(&config.project_root);
+    scaffold::build_tree(&config.directories, &root)
 }
