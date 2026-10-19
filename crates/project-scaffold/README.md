@@ -9,9 +9,9 @@ description.
 use project_scaffold::{Context, ProjectScaffoldConfig, RawContext, project_scaffolding};
 
 let context = Context::build(RawContext {
-    product: "ak".into(),
-    trial: "xx".into(),
-    purpose: "final".into(),
+    product: "ak",
+    trial: "xx",
+    purpose: "final",
     root_path: "/projects",
     project_root: None,
     study: None,
@@ -22,8 +22,10 @@ let config = ProjectScaffoldConfig::build(&context)?;
 project_scaffolding(config)?;
 ```
 
-`RawContext` is generic over its path type, so `&str`, `String`, `&Path`, and `PathBuf` all work
-without conversion. The validated `Context` it returns owns plain `PathBuf`s.
+`RawContext` is generic over both its path type and its string type, so `&str`, `String`, `&Path`,
+and `PathBuf` all work in every field without conversion. Both parameters default to the owning
+types, so `PathBuf`/`String` callers are unaffected. The validated `Context` it returns owns plain
+`PathBuf`s and `String`s.
 
 `Context::build` normalises its input: `product` and `trial` are uppercased, `study` defaults to
 `{PRODUCT}-{TRIAL}`, and `project_root` defaults to `{root_path}/{product}/{trial}` in lower case.

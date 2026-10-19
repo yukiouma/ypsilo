@@ -56,9 +56,10 @@ impl Context {
 ```
 
 `RawContext` carries the same fields before normalisation, with `Option` where a value is derivable.
-It is generic over its path type — `RawContext<P = PathBuf>` — so callers may pass `&str`, `String`,
-`&Path`, or `PathBuf` for `root_path`, `project_root`, and `config_path` without converting first.
-The validated `Context` owns concrete `PathBuf`s, so no downstream signature is generic.
+It is generic over both its path type and its string type — `RawContext<P = PathBuf, S = String>` —
+so callers may pass `&str`, `String`, `&Path`, or `PathBuf` in every field without converting first.
+Both parameters default to the owning types, so existing callers are unaffected. The validated
+`Context` owns concrete `PathBuf`s and `String`s, so no downstream signature is generic.
 
 ### Normalisation rules
 

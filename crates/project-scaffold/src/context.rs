@@ -6,17 +6,17 @@ use std::{
 
 /// The per-study inputs, before normalisation.
 ///
-/// Generic over the path type so callers can pass `&str`, `String`, `&Path`, or
-/// `PathBuf` without converting first. Defaults to `PathBuf`, so existing callers are
-/// unaffected.
+/// Generic over both the path type and the string type, so callers can pass `&str`,
+/// `String`, `&Path`, or `PathBuf` without converting first. Both parameters default to
+/// the owning types, so existing callers are unaffected.
 #[derive(Debug, Clone)]
-pub struct RawContext<P = PathBuf> {
-    pub product: String,
-    pub trial: String,
-    pub purpose: String,
+pub struct RawContext<P = PathBuf, S = String> {
+    pub product: S,
+    pub trial: S,
+    pub purpose: S,
     pub root_path: P,
     pub project_root: Option<P>,
-    pub study: Option<String>,
+    pub study: Option<S>,
     pub config_path: P,
 }
 
@@ -46,11 +46,11 @@ impl Context {
     /// absent, and `root_path`, an explicit `project_root`, and `config_path` are checked
     /// for existence. A derived `project_root` is not checked — scaffolding creates it.
     ///
-    /// Accepts any path type implementing [`AsRef<Path>`]; the resulting [`Context`]
-    /// owns concrete [`PathBuf`]s.
-    pub fn build<P: AsRef<Path>>(raw: RawContext<P>) -> Result<Self> {
-        let product = raw.product.to_uppercase();
-        let trial = raw.trial.to_uppercase();
+    /// Accepts any types implementing [`AsRef<Path>`] and [`AsRef<str>`]; the resulting
+    /// [`Context`] owns concrete [`PathBuf`]s and [`String`]s.
+    pub fn build<P: AsRef<Path>, S: AsRef<str>>(raw: RawContext<P, S>) -> Result<Self> {
+        let product = raw.product.as_ref().to_uppercase();
+        let trial = raw.trial.as_ref().to_uppercase();
 
         let root_path: PathBuf = raw.root_path.as_ref().to_path_buf();
         if !root_path.exists() {
@@ -70,7 +70,10 @@ impl Context {
                 .join(trial.to_lowercase()),
         };
 
-        let study = raw.study.unwrap_or_else(|| format!("{product}-{trial}"));
+        let study = raw
+            .study
+            .map(|s| s.as_ref().to_string())
+            .unwrap_or_else(|| format!("{product}-{trial}"));
 
         let config_path: PathBuf = raw.config_path.as_ref().to_path_buf();
         if !config_path.exists() {
@@ -80,7 +83,7 @@ impl Context {
         Ok(Self {
             product,
             trial,
-            purpose: raw.purpose,
+            purpose: raw.purpose.as_ref().to_string(),
             root_path,
             project_root,
             study,
@@ -289,5 +292,63 @@ mod generic_path_tests {
 
         assert_eq!(context.project_root, explicit);
         assert_eq!(context.study, "AK-999");
+    }
+}
+
+#[cfg(test)]
+mod generic_str_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// The string fields should accept `&str` directly, with no `.to_string()`.
+    #[test]
+    fn accepts_borrowed_str_fields() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("config.json"), "{}").unwrap();
+        let root = dir.path().to_str().unwrap().to_string();
+        let config_path = dir.path().join("config.json").to_str().unwrap().to_string();
+
+        let context = Context::build(RawContext {
+            product: "ak",
+            trial: "xx",
+            purpose: "final",
+            root_path: root.as_str(),
+            project_root: None,
+            study: None,
+            config_path: config_path.as_str(),
+        })
+        .unwrap();
+
+        assert_eq!(context.product, "AK");
+        assert_eq!(context.trial, "XX");
+        assert_eq!(context.purpose, "final");
+        assert_eq!(context.study, "AK-XX");
+    }
+
+    /// `&str` paths and `&str` text together, plus an explicit borrowed `study`.
+    #[test]
+    fn mixes_borrowed_strs_for_text_and_paths() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("config.json"), "{}").unwrap();
+        let explicit = dir.path().join("elsewhere");
+        fs::create_dir(&explicit).unwrap();
+        let root = dir.path().to_str().unwrap().to_string();
+        let config_path = dir.path().join("config.json").to_str().unwrap().to_string();
+        let explicit = explicit.to_str().unwrap().to_string();
+
+        let context = Context::build(RawContext {
+            product: "ak",
+            trial: "xx",
+            purpose: "final",
+            root_path: root.as_str(),
+            project_root: Some(explicit.as_str()),
+            study: Some("AK-999"),
+            config_path: config_path.as_str(),
+        })
+        .unwrap();
+
+        assert_eq!(context.study, "AK-999");
+        assert_eq!(context.project_root, explicit);
     }
 }
