@@ -13,13 +13,22 @@ let context = Context::build(RawContext {
     trial: "xx",
     purpose: "final",
     root_path: "/projects",
-    project_root: None,
-    study: None,
     config_path: "/etc/project-scaffold/config.json",
+    ..Default::default()
 })?;
 
 let config = ProjectScaffoldConfig::build(&context)?;
 project_scaffolding(config)?;
+```
+
+`project_root` and `study` are optional. Omit them with `..Default::default()` as above, or use
+the constructor and fluent setters:
+
+```rust
+let context = Context::build(
+    RawContext::new("ak", "xx", "final", "/projects", "/etc/project-scaffold/config.json")
+        .with_study("AK-999"),
+)?;
 ```
 
 `RawContext` is generic over both its path type and its string type, so `&str`, `String`, `&Path`,

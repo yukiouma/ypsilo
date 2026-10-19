@@ -9,7 +9,11 @@ use std::{
 /// Generic over both the path type and the string type, so callers can pass `&str`,
 /// `String`, `&Path`, or `PathBuf` without converting first. Both parameters default to
 /// the owning types, so existing callers are unaffected.
-#[derive(Debug, Clone)]
+///
+/// `project_root` and `study` are optional: omit them with `..Default::default()`, or
+/// start from [`RawContext::new`] and set them with [`RawContext::with_project_root`]
+/// and [`RawContext::with_study`].
+#[derive(Debug, Clone, Default)]
 pub struct RawContext<P = PathBuf, S = String> {
     pub product: S,
     pub trial: S,
@@ -18,6 +22,34 @@ pub struct RawContext<P = PathBuf, S = String> {
     pub project_root: Option<P>,
     pub study: Option<S>,
     pub config_path: P,
+}
+
+impl<P, S> RawContext<P, S> {
+    /// Build a context from the required fields, leaving the optional ones unset so
+    /// [`Context::build`] derives them.
+    pub fn new(product: S, trial: S, purpose: S, root_path: P, config_path: P) -> Self {
+        Self {
+            product,
+            trial,
+            purpose,
+            root_path,
+            project_root: None,
+            study: None,
+            config_path,
+        }
+    }
+
+    /// Supply an explicit `project_root` instead of letting it be derived.
+    pub fn with_project_root(mut self, project_root: P) -> Self {
+        self.project_root = Some(project_root);
+        self
+    }
+
+    /// Supply an explicit `study` instead of deriving `{PRODUCT}-{TRIAL}`.
+    pub fn with_study(mut self, study: S) -> Self {
+        self.study = Some(study);
+        self
+    }
 }
 
 /// Validated, normalised inputs plus the template variables they resolve to.
@@ -350,5 +382,83 @@ mod generic_str_tests {
 
         assert_eq!(context.study, "AK-999");
         assert_eq!(context.project_root, explicit);
+    }
+}
+
+#[cfg(test)]
+mod defaults_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn prepared() -> (TempDir, String, String) {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("config.json"), "{}").unwrap();
+        let root = dir.path().to_str().unwrap().to_string();
+        let config_path = dir.path().join("config.json").to_str().unwrap().to_string();
+        (dir, root, config_path)
+    }
+
+    /// The optional fields should be omittable via `..Default::default()`.
+    #[test]
+    fn optional_fields_can_be_omitted_via_default() {
+        let (_dir, root, config_path) = prepared();
+
+        let context = Context::build(RawContext {
+            product: "ak",
+            trial: "xx",
+            purpose: "final",
+            root_path: root.as_str(),
+            config_path: config_path.as_str(),
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert_eq!(context.study, "AK-XX");
+        assert_eq!(context.project_root, Path::new(&root).join("ak").join("xx"));
+    }
+
+    /// The constructor should need only the required fields.
+    #[test]
+    fn new_needs_only_the_required_fields() {
+        let (_dir, root, config_path) = prepared();
+
+        let context = Context::build(RawContext::new(
+            "ak",
+            "xx",
+            "final",
+            root.as_str(),
+            config_path.as_str(),
+        ))
+        .unwrap();
+
+        assert_eq!(context.study, "AK-XX");
+        assert_eq!(context.project_root, Path::new(&root).join("ak").join("xx"));
+    }
+
+    /// Optional fields should be settable fluently, without naming the others.
+    #[test]
+    fn optional_fields_are_settable_fluently() {
+        let (_dir, root, config_path) = prepared();
+        let explicit = Path::new(&root).join("somewhere");
+        fs::create_dir(&explicit).unwrap();
+
+        let context = Context::build(
+            RawContext::new("ak", "xx", "final", root.as_str(), config_path.as_str())
+                .with_study("AK-999")
+                .with_project_root(explicit.to_str().unwrap()),
+        )
+        .unwrap();
+
+        assert_eq!(context.study, "AK-999");
+        assert_eq!(context.project_root, explicit);
+    }
+
+    /// A default `RawContext` leaves every optional field unset.
+    #[test]
+    fn default_raw_context_leaves_optionals_unset() {
+        let raw: RawContext = RawContext::default();
+        assert!(raw.project_root.is_none());
+        assert!(raw.study.is_none());
     }
 }
