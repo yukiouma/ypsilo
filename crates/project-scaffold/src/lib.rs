@@ -10,8 +10,6 @@ pub use config::{Migration, Node, ProjectScaffoldConfig};
 pub use context::{Context, RawContext};
 pub use error::ScaffoldError;
 
-use std::path::PathBuf;
-
 /// Result type for every fallible operation in this crate.
 pub type Result<T> = std::result::Result<T, ScaffoldError>;
 
@@ -21,6 +19,5 @@ pub type Result<T> = std::result::Result<T, ScaffoldError>;
 /// [`ProjectScaffoldConfig::build`]. Paths that already exist are left untouched, so
 /// calling this twice over the same project root is a no-op.
 pub fn project_scaffolding(config: ProjectScaffoldConfig) -> Result<()> {
-    let root = PathBuf::from(&config.project_root);
-    scaffold::build_tree(&config.directories, &root)
+    scaffold::build_tree(&config.directories, config.project_root.as_ref())
 }

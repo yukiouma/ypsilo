@@ -12,15 +12,18 @@ let context = Context::build(RawContext {
     product: "ak".into(),
     trial: "xx".into(),
     purpose: "final".into(),
-    root_path: "/projects".into(),
+    root_path: "/projects",
     project_root: None,
     study: None,
-    config_path: "/etc/project-scaffold/config.json".into(),
+    config_path: "/etc/project-scaffold/config.json",
 })?;
 
 let config = ProjectScaffoldConfig::build(&context)?;
 project_scaffolding(config)?;
 ```
+
+`RawContext` is generic over its path type, so `&str`, `String`, `&Path`, and `PathBuf` all work
+without conversion. The validated `Context` it returns owns plain `PathBuf`s.
 
 `Context::build` normalises its input: `product` and `trial` are uppercased, `study` defaults to
 `{PRODUCT}-{TRIAL}`, and `project_root` defaults to `{root_path}/{product}/{trial}` in lower case.

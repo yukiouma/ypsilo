@@ -1,16 +1,23 @@
 use crate::{Result, ScaffoldError};
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 /// The per-study inputs, before normalisation.
+///
+/// Generic over the path type so callers can pass `&str`, `String`, `&Path`, or
+/// `PathBuf` without converting first. Defaults to `PathBuf`, so existing callers are
+/// unaffected.
 #[derive(Debug, Clone)]
-pub struct RawContext {
+pub struct RawContext<P = PathBuf> {
     pub product: String,
     pub trial: String,
     pub purpose: String,
-    pub root_path: PathBuf,
-    pub project_root: Option<PathBuf>,
+    pub root_path: P,
+    pub project_root: Option<P>,
     pub study: Option<String>,
-    pub config_path: PathBuf,
+    pub config_path: P,
 }
 
 /// Validated, normalised inputs plus the template variables they resolve to.
@@ -38,41 +45,46 @@ impl Context {
     /// `product` and `trial` are uppercased, `study` and `project_root` are derived when
     /// absent, and `root_path`, an explicit `project_root`, and `config_path` are checked
     /// for existence. A derived `project_root` is not checked — scaffolding creates it.
-    pub fn build(raw: RawContext) -> Result<Self> {
+    ///
+    /// Accepts any path type implementing [`AsRef<Path>`]; the resulting [`Context`]
+    /// owns concrete [`PathBuf`]s.
+    pub fn build<P: AsRef<Path>>(raw: RawContext<P>) -> Result<Self> {
         let product = raw.product.to_uppercase();
         let trial = raw.trial.to_uppercase();
 
-        if !raw.root_path.exists() {
-            return Err(ScaffoldError::RootPathNotFound(raw.root_path.clone()));
+        let root_path: PathBuf = raw.root_path.as_ref().to_path_buf();
+        if !root_path.exists() {
+            return Err(ScaffoldError::RootPathNotFound(root_path));
         }
 
         let project_root = match raw.project_root {
             Some(path) => {
+                let path: PathBuf = path.as_ref().to_path_buf();
                 if !path.exists() {
                     return Err(ScaffoldError::ProjectRootNotFound(path));
                 }
                 path
             }
-            None => raw
-                .root_path
+            None => root_path
                 .join(product.to_lowercase())
                 .join(trial.to_lowercase()),
         };
 
         let study = raw.study.unwrap_or_else(|| format!("{product}-{trial}"));
 
-        if !raw.config_path.exists() {
-            return Err(ScaffoldError::ConfigPathNotFound(raw.config_path.clone()));
+        let config_path: PathBuf = raw.config_path.as_ref().to_path_buf();
+        if !config_path.exists() {
+            return Err(ScaffoldError::ConfigPathNotFound(config_path));
         }
 
         Ok(Self {
             product,
             trial,
             purpose: raw.purpose,
-            root_path: raw.root_path,
+            root_path,
             project_root,
             study,
-            config_path: raw.config_path,
+            config_path,
         })
     }
 
@@ -221,5 +233,61 @@ mod tests {
             vars["project_root"],
             context.project_root.display().to_string()
         );
+    }
+}
+
+#[cfg(test)]
+mod generic_path_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// Callers should be able to hand over borrowed strings or `String`s without
+    /// converting to `PathBuf` first.
+    #[test]
+    fn accepts_borrowed_str_paths() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("config.json"), "{}").unwrap();
+
+        let root = dir.path().to_str().unwrap().to_string();
+        let config_path = dir.path().join("config.json");
+        let config_path = config_path.to_str().unwrap().to_string();
+
+        let context = Context::build(RawContext {
+            product: "ak".to_string(),
+            trial: "xx".to_string(),
+            purpose: "final".to_string(),
+            root_path: root.as_str(),
+            project_root: None,
+            study: None,
+            config_path: config_path.as_str(),
+        })
+        .unwrap();
+
+        assert_eq!(context.project_root, dir.path().join("ak").join("xx"));
+        assert_eq!(context.study, "AK-XX");
+    }
+
+    #[test]
+    fn accepts_owned_string_paths() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("config.json"), "{}").unwrap();
+
+        let explicit = dir.path().join("somewhere");
+        fs::create_dir(&explicit).unwrap();
+
+        let context = Context::build(RawContext {
+            product: "ak".to_string(),
+            trial: "xx".to_string(),
+            purpose: "final".to_string(),
+            root_path: dir.path().to_str().unwrap().to_string(),
+            project_root: Some(explicit.to_str().unwrap().to_string()),
+            study: Some("AK-999".to_string()),
+            config_path: dir.path().join("config.json").to_str().unwrap().to_string(),
+        })
+        .unwrap();
+
+        assert_eq!(context.project_root, explicit);
+        assert_eq!(context.study, "AK-999");
     }
 }
