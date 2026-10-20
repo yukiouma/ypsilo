@@ -59,5 +59,9 @@ for a worked example.
 scaffolding; a missing one is an error naming the path. A migration copies the immediate children
 of its source directory whose extension is in `filter` — it does not recurse.
 
+Copied files keep the access and modification times of their source, so a template's age survives
+the copy instead of being stamped with the moment of scaffolding. The creation time of a copy is
+always the moment of the copy — no platform-independent way exists to set it.
+
 Paths that already exist are never overwritten, so re-running scaffolding over an existing project
 is a no-op.
