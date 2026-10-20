@@ -38,9 +38,10 @@ types, so `PathBuf`/`String` callers are unaffected. The validated `Context` it 
 `PathBuf`s and `String`s.
 
 `Context::build` normalises its input: `product` and `trial` are uppercased, `study` defaults to
-`{PRODUCT}-{TRIAL}`, and `project_root` defaults to `{root_path}/{product}/{trial}` in lower case.
-`root_path`, an explicit `project_root`, and `config_path` must already exist. `purpose` is kept as
-given, and stays absent when the context carries none.
+`{PRODUCT}-{TRIAL}`, `project_root` defaults to `{root_path}/{product}/{trial}` in lower case, and
+`date` is set to the current day as `yyyymmdd` (e.g. `20260101`). `root_path`, an explicit
+`project_root`, and `config_path` must already exist. `purpose` is kept as given, and stays absent
+when the context carries none.
 
 ## Configuration
 
@@ -50,7 +51,7 @@ for a worked example.
 | Field | Meaning |
 | --- | --- |
 | `projectRoot` | where the tree is rooted; accepts `{{ project_root }}` |
-| `directories[].name` | entry name; accepts `{{ product }}`, `{{ trial }}`, `{{ purpose }}`, `{{ study }}`, `{{ root_path }}`, `{{ project_root }}` |
+| `directories[].name` | entry name; accepts `{{ product }}`, `{{ trial }}`, `{{ purpose }}`, `{{ study }}`, `{{ date }}`, `{{ root_path }}`, `{{ project_root }}` |
 | `directories[].directory` | `true` for a directory, `false` for a file |
 | `directories[].children` | nested entries |
 | `directories[].reference` | absolute path to a file copied to `name` |
@@ -62,6 +63,18 @@ context does not have — `{{ purpose }}` without a purpose, say — is left unr
 name that mixes it with other text: the whole name becomes null and the entry is skipped. A name
 omitted from the config is skipped the same way. `projectRoot` has no such luxury: an unresolved
 key there is an error, since a scaffold needs a root to build into.
+
+### Methods
+
+A placeholder may name a method to apply to the value it resolves to, after a `|`:
+
+```
+{{ study | uppercase }}
+{{ study | lowercase }}
+```
+
+`uppercase` and `lowercase` are the only methods understood. Any other method is ignored, and the
+value is used as it stands — `{{ study | titlecase }}` yields the study name unchanged.
 
 `reference` and `migration.directory` are absolute and are checked for existence before
 scaffolding; a missing one is an error naming the path. A migration copies the immediate children

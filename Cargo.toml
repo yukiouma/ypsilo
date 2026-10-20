@@ -10,6 +10,7 @@ resolver = "2"
 
 [workspace.dependencies]
 calamine = "0.35.0"
+chrono = "0.4.45"
 quick-xml = "0.40.1"
 thiserror = "2.0.18"
 regex = "1.13.0"

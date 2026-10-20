@@ -2,7 +2,8 @@
 
 - **Date:** 2026-10-19
 - **Status:** Approved (brainstorming)
-- **Revised:** 2026-10-20 — optional `purpose`, null on an unresolved template key, optional node name
+- **Revised:** 2026-10-20 — optional `purpose`, null on an unresolved template key, optional node name;
+  2026-10-20 — `date` template variable, `uppercase` / `lowercase` methods on a placeholder
 - **Owner:** ypsilo / project-scaffold
 
 ## 1. Goal
@@ -23,7 +24,7 @@ pub fn project_scaffolding(config: ProjectScaffoldConfig) -> Result<()>
 
 ```
 crates/project-scaffold/
-├── Cargo.toml          # serde, serde_json, thiserror (from workspace); tempfile as dev-dep
+├── Cargo.toml          # chrono, serde, serde_json, thiserror (from workspace); tempfile as dev-dep
 ├── src/
 │   ├── lib.rs          # project_scaffolding(), Result alias, re-exports
 │   ├── context.rs      # Context / RawContext + normalisation + validation
@@ -45,6 +46,7 @@ pub struct Context {
     pub product: String,            // uppercased
     pub trial: String,              // uppercased
     pub purpose: Option<String>,    // unchanged, when given
+    pub date: String,               // the current day, as yyyymmdd
     pub root_path: PathBuf,         // must exist
     pub project_root: PathBuf,      // explicit, or derived
     pub study: String,              // explicit, or derived
@@ -73,6 +75,7 @@ and `with_purpose`, `with_project_root` and `with_study` set the optional ones.
 | `product`      | uppercased                                                                   |
 | `trial`        | uppercased                                                                   |
 | `purpose`      | unchanged, and absent when not given                                         |
+| `date`         | the current day, as `yyyymmdd` — set by `Context::build`, not an input       |
 | `root_path`    | must exist, else error                                                       |
 | `project_root` | if `Some`, must exist; if `None`, derive `{root_path}/{product}/{trial}`     |
 |                | using the **lower-cased** product and trial                                  |
@@ -128,8 +131,14 @@ every node `name`.
 ## 5. Template substitution
 
 Every `{{ key }}` occurrence in a node `name` (and in `project_root`) is replaced with the
-corresponding context value. Recognised keys: `product`, `trial`, `purpose`, `root_path`,
+corresponding context value. Recognised keys: `product`, `trial`, `purpose`, `date`, `root_path`,
 `project_root`, `study`. `purpose` is only recognised when the context carries one.
+
+A placeholder may name a **method** to apply to the value it resolves to, after a `|`:
+`{{ study | uppercase }}` splits into the key `study` and the method `uppercase`. The known
+methods are `uppercase` and `lowercase`; any other method is **ignored**, and the value is used as
+it stands — an unknown method never fails a config. The method applies to the whole value, so
+`{{ study | lowercase }} Data Issue Log.xlsx` reads as `ak-xx Data Issue Log.xlsx`.
 
 A key the context does not have leaves the field it appears in **null** rather than half-rendered:
 a name of `"{{ purpose }}"` on a study without a purpose resolves to nothing, and so does
@@ -199,6 +208,9 @@ Unit tests:
 
 - template substitution of each recognised key, embedded within surrounding text, the null result
   for an unknown key, and the `UnknownTemplateKey` error from the strict variant;
+- the `uppercase` and `lowercase` methods, an ignored unknown method, and a method on a key that
+  does not exist;
+- `Context::build` setting `date` to the current day as `yyyymmdd`;
 - `Context::build` normalisation: uppercasing, `project_root` derivation, `study` derivation, the
   optional `purpose`, and each existence-check error;
 - `Node::resolve` leaving a name null when the config omits it or its key is unresolvable;

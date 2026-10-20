@@ -26,6 +26,8 @@ fn fixture_config(references: &Path) -> serde_json::Value {
                 "children": [
                     { "name": "protocol", "directory": true },
                     { "name": "crf", "directory": true },
+                    { "name": "{{ study | lowercase }} notes", "directory": true },
+                    { "name": "{{ date }} log", "directory": true },
                     {
                         "name": "specs",
                         "directory": true,
@@ -274,6 +276,32 @@ fn interpolates_purpose_and_study_into_directory_and_file_names() {
             .join("utility")
             .join("AK-XX Validation Review Tracker.xlsx")
             .is_file()
+    );
+}
+
+#[test]
+fn applies_a_template_method_to_a_directory_name() {
+    let fixture = Fixture::new();
+    let root = fixture.scaffold();
+
+    // `{{ study | lowercase }}` is `AK-XX` in lower case.
+    assert!(root.join("documents").join("ak-xx notes").is_dir());
+}
+
+#[test]
+fn stamps_the_current_date_into_a_directory_name() {
+    let fixture = Fixture::new();
+    let context = Context::build(fixture.raw_context(None)).unwrap();
+    let date = context.date.clone();
+    let project_root = context.project_root.clone();
+
+    project_scaffolding(ProjectScaffoldConfig::build(&context).unwrap()).unwrap();
+
+    assert!(
+        project_root
+            .join("documents")
+            .join(format!("{date} log"))
+            .is_dir()
     );
 }
 

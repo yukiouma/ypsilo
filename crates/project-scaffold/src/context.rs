@@ -1,4 +1,5 @@
 use crate::{Result, ScaffoldError};
+use chrono::Local;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -68,6 +69,8 @@ pub struct Context {
     pub trial: String,
     /// Unchanged, when given.
     pub purpose: Option<String>,
+    /// The day the context was built, as `yyyymmdd`.
+    pub date: String,
     /// Verified to exist.
     pub root_path: PathBuf,
     /// Either the verified explicit path, or derived under `root_path`.
@@ -82,14 +85,16 @@ impl Context {
     /// Normalise and validate `raw`.
     ///
     /// `product` and `trial` are uppercased, `study` and `project_root` are derived when
-    /// absent, and `root_path`, an explicit `project_root`, and `config_path` are checked
-    /// for existence. A derived `project_root` is not checked — scaffolding creates it.
+    /// absent, `date` is set to the current day, and `root_path`, an explicit
+    /// `project_root`, and `config_path` are checked for existence. A derived
+    /// `project_root` is not checked — scaffolding creates it.
     ///
     /// Accepts any types implementing [`AsRef<Path>`] and [`AsRef<str>`]; the resulting
     /// [`Context`] owns concrete [`PathBuf`]s and [`String`]s.
     pub fn build<P: AsRef<Path>, S: AsRef<str>>(raw: RawContext<P, S>) -> Result<Self> {
         let product = raw.product.as_ref().to_uppercase();
         let trial = raw.trial.as_ref().to_uppercase();
+        let date = Local::now().format("%Y%m%d").to_string();
 
         let root_path: PathBuf = raw.root_path.as_ref().to_path_buf();
         if !root_path.exists() {
@@ -123,6 +128,7 @@ impl Context {
             product,
             trial,
             purpose: raw.purpose.map(|purpose| purpose.as_ref().to_string()),
+            date,
             root_path,
             project_root,
             study,
@@ -138,6 +144,7 @@ impl Context {
         let mut vars = HashMap::from([
             ("product".to_string(), self.product.clone()),
             ("trial".to_string(), self.trial.clone()),
+            ("date".to_string(), self.date.clone()),
             (
                 "root_path".to_string(),
                 self.root_path.display().to_string(),
@@ -207,6 +214,23 @@ mod tests {
         input.purpose = None;
         let context = Context::build(input).unwrap();
         assert_eq!(context.purpose, None);
+    }
+
+    #[test]
+    fn sets_the_date_to_the_current_day() {
+        let dir = TempDir::new().unwrap();
+        touch_config(&dir);
+        let context = Context::build(raw(&dir)).unwrap();
+        assert_eq!(context.date, Local::now().format("%Y%m%d").to_string());
+    }
+
+    #[test]
+    fn formats_the_date_as_eight_digits() {
+        let dir = TempDir::new().unwrap();
+        touch_config(&dir);
+        let context = Context::build(raw(&dir)).unwrap();
+        assert_eq!(context.date.len(), 8);
+        assert!(context.date.chars().all(|c| c.is_ascii_digit()));
     }
 
     #[test]
@@ -287,6 +311,7 @@ mod tests {
         assert_eq!(vars["product"], "AK");
         assert_eq!(vars["trial"], "XX");
         assert_eq!(vars["purpose"], "final");
+        assert_eq!(vars["date"], context.date);
         assert_eq!(vars["study"], "AK-XX");
         assert_eq!(vars["root_path"], dir.path().display().to_string());
         assert_eq!(
