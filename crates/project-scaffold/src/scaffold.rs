@@ -16,7 +16,12 @@ pub fn build_tree(nodes: &[Node], base: &Path) -> Result<()> {
 }
 
 fn create_node(node: &Node, base: &Path) -> Result<()> {
-    let target = base.join(&node.name);
+    // A node without a name has nothing to create, and neither do its children.
+    let Some(name) = &node.name else {
+        return Ok(());
+    };
+
+    let target = base.join(name);
 
     if let Some(migration) = &node.migration {
         return copy_migration(migration, &target);
@@ -158,7 +163,7 @@ mod tests {
 
     fn dir(name: &str) -> Node {
         Node {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             directory: true,
             reference: None,
             migration: None,
@@ -202,6 +207,32 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         build_tree(&[dir("documents")], tmp.path()).unwrap();
         assert!(tmp.path().join("documents").is_dir());
+    }
+
+    #[test]
+    fn skips_a_node_without_a_name() {
+        let tmp = TempDir::new().unwrap();
+        let unnamed = Node {
+            name: None,
+            ..dir("documents")
+        };
+
+        build_tree(&[unnamed], tmp.path()).unwrap();
+
+        assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn skips_the_children_of_a_node_without_a_name() {
+        let tmp = TempDir::new().unwrap();
+        let unnamed = Node {
+            name: None,
+            ..with_children("documents", vec![dir("specs")])
+        };
+
+        build_tree(&[unnamed], tmp.path()).unwrap();
+
+        assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 0);
     }
 
     #[test]
@@ -286,7 +317,7 @@ mod tests {
 
     fn reference_node(name: &str, reference: &Path) -> Node {
         Node {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             directory: false,
             reference: Some(reference.to_path_buf()),
             migration: None,
@@ -368,7 +399,7 @@ mod tests {
     }
     fn migration_node(name: &str, directory: &Path, filter: &[&str]) -> Node {
         Node {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             directory: true,
             reference: None,
             migration: Some(Migration {

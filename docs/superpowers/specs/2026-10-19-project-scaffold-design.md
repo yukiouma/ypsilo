@@ -2,6 +2,7 @@
 
 - **Date:** 2026-10-19
 - **Status:** Approved (brainstorming)
+- **Revised:** 2026-10-20 — optional `purpose`, null on an unresolved template key, optional node name
 - **Owner:** ypsilo / project-scaffold
 
 ## 1. Goal
@@ -43,10 +44,10 @@ dependencies referenced from `[workspace.dependencies]`.
 pub struct Context {
     pub product: String,            // uppercased
     pub trial: String,              // uppercased
-    pub purpose: String,            // unchanged
+    pub purpose: Option<String>,    // unchanged, when given
     pub root_path: PathBuf,         // must exist
-    pub project_root: Option<PathBuf>,
-    pub study: Option<String>,
+    pub project_root: PathBuf,      // explicit, or derived
+    pub study: String,              // explicit, or derived
     pub config_path: PathBuf,       // must exist
 }
 
@@ -55,11 +56,15 @@ impl Context {
 }
 ```
 
-`RawContext` carries the same fields before normalisation, with `Option` where a value is derivable.
-It is generic over both its path type and its string type — `RawContext<P = PathBuf, S = String>` —
-so callers may pass `&str`, `String`, `&Path`, or `PathBuf` in every field without converting first.
-Both parameters default to the owning types, so existing callers are unaffected. The validated
-`Context` owns concrete `PathBuf`s and `String`s, so no downstream signature is generic.
+`RawContext` carries the same fields before normalisation, with `Option` where a value is derivable
+or may be absent. It is generic over both its path type and its string type — `RawContext<P =
+PathBuf, S = String>` — so callers may pass `&str`, `String`, `&Path`, or `PathBuf` in every field
+without converting first. Both parameters default to the owning types, so existing callers are
+unaffected. The validated `Context` owns concrete `PathBuf`s and `String`s, so no downstream
+signature is generic.
+
+`purpose` is optional: a study need not have one. `RawContext::new` takes only the required fields,
+and `with_purpose`, `with_project_root` and `with_study` set the optional ones.
 
 ### Normalisation rules
 
@@ -67,7 +72,7 @@ Both parameters default to the owning types, so existing callers are unaffected.
 | -------------- | --------------------------------------------------------------------------- |
 | `product`      | uppercased                                                                   |
 | `trial`        | uppercased                                                                   |
-| `purpose`      | unchanged                                                                    |
+| `purpose`      | unchanged, and absent when not given                                         |
 | `root_path`    | must exist, else error                                                       |
 | `project_root` | if `Some`, must exist; if `None`, derive `{root_path}/{product}/{trial}`     |
 |                | using the **lower-cased** product and trial                                  |
@@ -94,7 +99,8 @@ pub struct ProjectScaffoldConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Node {
-    pub name: String,
+    #[serde(default)]
+    pub name: Option<String>,
     pub directory: bool,
     #[serde(default)]
     pub reference: Option<PathBuf>,
@@ -123,7 +129,16 @@ every node `name`.
 
 Every `{{ key }}` occurrence in a node `name` (and in `project_root`) is replaced with the
 corresponding context value. Recognised keys: `product`, `trial`, `purpose`, `root_path`,
-`project_root`, `study`. An unknown key is an error rather than a silent empty string.
+`project_root`, `study`. `purpose` is only recognised when the context carries one.
+
+A key the context does not have leaves the field it appears in **null** rather than half-rendered:
+a name of `"{{ purpose }}"` on a study without a purpose resolves to nothing, and so does
+`"{{ study }} {{ purpose }}.xlsx"` — the whole name is null, not just the one placeholder. The
+template is either fully resolved or it is not.
+
+`project_root` is the exception: it has no null to fall back to, so an unresolved key there is the
+`UnknownTemplateKey` error. The two behaviours live side by side in `template.rs` — `render`
+resolves leniently and yields nothing when a key is missing, `render_required` fails.
 
 A hand-rolled scan is used rather than a `mustache`/`handlebars` dependency: the config only ever
 uses bare `{{ identifier }}` lookups against a fixed key set, so a full template engine would add a
@@ -134,6 +149,8 @@ dependency and an escaping model the crate does not need.
 `project_scaffolding(config)` walks `config.directories` recursively from the resolved
 `project_root`:
 
+- **Node without a name** — skipped, along with its children. A name is absent when the config
+  omits it, or when a placeholder in it had no value to resolve to.
 - **Node with `reference`** — verify the source exists, then copy it to `base/{name}`.
 - **Node with `migration`** — create the directory, verify the source directory exists, then copy
   every entry in it whose **extension** is in `filter`. The traversal is **non-recursive**: only
@@ -165,7 +182,7 @@ identifiable.
 | `ConfigPathNotFound`    | `config_path` does not exist                        |
 | `ReferenceNotFound`     | a node's `reference` source does not exist          |
 | `MigrationDirNotFound`  | a node's `migration.directory` does not exist       |
-| `UnknownTemplateKey`    | `{{ ... }}` names a key the context does not define |
+| `UnknownTemplateKey`    | a required `{{ ... }}` names a key the context does not define |
 
 ## 8. Mock data
 
@@ -180,10 +197,12 @@ chosen in preference to resolving those paths at runtime against a configurable 
 
 Unit tests:
 
-- template substitution of each recognised key, embedded within surrounding text, and the
-  unknown-key error;
-- `Context::build` normalisation: uppercasing, `project_root` derivation, `study` derivation, and
-  each existence-check error.
+- template substitution of each recognised key, embedded within surrounding text, the null result
+  for an unknown key, and the `UnknownTemplateKey` error from the strict variant;
+- `Context::build` normalisation: uppercasing, `project_root` derivation, `study` derivation, the
+  optional `purpose`, and each existence-check error;
+- `Node::resolve` leaving a name null when the config omits it or its key is unresolvable;
+- the scaffolding walk skipping a node without a name, and its children with it.
 
 Integration tests (over `tempfile`):
 
@@ -191,4 +210,5 @@ Integration tests (over `tempfile`):
 - `reference` files are copied under their configured (templated) names;
 - `migration` copies the `.sas` files and **not** the `.xlsx` files;
 - a second run over the same directory is a no-op and does not overwrite;
-- a missing reference file produces `ReferenceNotFound`.
+- a missing reference file produces `ReferenceNotFound`;
+- a context without a purpose leaves the `{{ purpose }}` branch out of the tree.
