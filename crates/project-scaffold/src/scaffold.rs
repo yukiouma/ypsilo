@@ -3,7 +3,7 @@ use crate::{
     config::{Migration, Node},
     error::ScaffoldError,
 };
-use std::{fs, path::Path};
+use std::{fs, io, path::Path};
 
 /// Materialise `nodes` beneath `base`.
 ///
@@ -59,9 +59,7 @@ fn copy_migration(migration: &Migration, target: &Path) -> Result<()> {
         if destination.exists() {
             continue;
         }
-        fs::copy(&path, &destination)
-            .map(|_| ())
-            .map_err(|e| ScaffoldError::io(&destination, e))?;
+        copy_file(&path, &destination)?;
     }
 
     Ok(())
@@ -87,9 +85,48 @@ fn copy_reference(reference: &Path, target: &Path) -> Result<()> {
     if let Some(parent) = target.parent() {
         create_dir(parent)?;
     }
-    fs::copy(reference, target)
+    copy_file(reference, target)
+}
+
+/// Copy `source` to `destination`, keeping the source's timestamps.
+///
+/// [`fs::copy`] alone leaves the destination stamped with the moment of the
+/// copy, which hides how old a template really is. The access and modification
+/// times are restored; the creation time stays that of the copy, because no
+/// platform-independent way exists to set it.
+fn copy_file(source: &Path, destination: &Path) -> Result<()> {
+    let metadata = fs::metadata(source).map_err(|e| ScaffoldError::io(source, e))?;
+
+    fs::copy(source, destination)
         .map(|_| ())
-        .map_err(|e| ScaffoldError::io(target, e))
+        .map_err(|e| ScaffoldError::io(destination, e))?;
+
+    let mut times = fs::FileTimes::new().set_modified(
+        metadata
+            .modified()
+            .map_err(|e| ScaffoldError::io(source, e))?,
+    );
+    if let Ok(accessed) = metadata.accessed() {
+        times = times.set_accessed(accessed);
+    }
+
+    let file = open_for_timestamps(destination).map_err(|e| ScaffoldError::io(destination, e))?;
+    file.set_times(times)
+        .map_err(|e| ScaffoldError::io(destination, e))
+}
+
+/// Open `path` so that its timestamps can be rewritten.
+///
+/// Write access is what [`fs::File::set_times`] needs on Windows. On Unix the
+/// timestamps can be set through a read-only handle, which is the only way in
+/// when the copy inherited a read-only permission from its source.
+fn open_for_timestamps(path: &Path) -> io::Result<fs::File> {
+    match fs::File::options().write(true).open(path) {
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+            fs::File::options().read(true).open(path)
+        }
+        result => result,
+    }
 }
 
 fn create_dir(path: &Path) -> Result<()> {
@@ -112,7 +149,11 @@ fn create_file(path: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::{ScaffoldError, config::Migration};
-    use std::{fs, path::Path};
+    use std::{
+        fs,
+        path::Path,
+        time::{Duration, SystemTime},
+    };
     use tempfile::TempDir;
 
     fn dir(name: &str) -> Node {
@@ -137,6 +178,23 @@ mod tests {
             children,
             ..dir(name)
         }
+    }
+
+    /// A fixed instant well before any test run, so a copied file's timestamp
+    /// cannot be confused with the moment it was copied.
+    fn long_ago() -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(1_600_000_000)
+    }
+
+    /// Stamp `path` with [`long_ago`], so its timestamps stand out from the copy.
+    fn age_file(path: &Path) {
+        let file = fs::File::options().write(true).open(path).unwrap();
+        file.set_times(
+            fs::FileTimes::new()
+                .set_accessed(long_ago())
+                .set_modified(long_ago()),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -416,5 +474,65 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, ScaffoldError::MigrationDirNotFound(_)));
+    }
+
+    #[test]
+    fn keeps_the_modification_time_of_a_copied_reference_file() {
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        let template = src.path().join("template.xlsx");
+        fs::write(&template, b"workbook").unwrap();
+        age_file(&template);
+
+        build_tree(&[reference_node("template.xlsx", &template)], dst.path()).unwrap();
+
+        let copied = dst.path().join("template.xlsx");
+        assert_eq!(
+            fs::metadata(&copied).unwrap().modified().unwrap(),
+            long_ago()
+        );
+    }
+
+    #[test]
+    fn keeps_the_modification_time_of_a_migrated_file() {
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        fs::write(src.path().join("m-forest-v1-0.sas"), b"macro").unwrap();
+        age_file(&src.path().join("m-forest-v1-0.sas"));
+
+        build_tree(
+            &[migration_node("macros", src.path(), &[".sas"])],
+            dst.path(),
+        )
+        .unwrap();
+
+        let copied = dst.path().join("macros").join("m-forest-v1-0.sas");
+        assert_eq!(
+            fs::metadata(&copied).unwrap().modified().unwrap(),
+            long_ago()
+        );
+    }
+
+    /// A read-only source makes a read-only copy, whose timestamps can only be
+    /// rewritten through a handle that was not opened for writing.
+    #[cfg(unix)]
+    #[test]
+    fn keeps_the_modification_time_of_a_copy_of_a_read_only_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        let template = src.path().join("template.xlsx");
+        fs::write(&template, b"workbook").unwrap();
+        age_file(&template);
+        fs::set_permissions(&template, fs::Permissions::from_mode(0o444)).unwrap();
+
+        build_tree(&[reference_node("template.xlsx", &template)], dst.path()).unwrap();
+
+        let copied = dst.path().join("template.xlsx");
+        assert_eq!(
+            fs::metadata(&copied).unwrap().modified().unwrap(),
+            long_ago()
+        );
     }
 }
