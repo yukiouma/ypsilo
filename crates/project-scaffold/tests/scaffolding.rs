@@ -183,7 +183,7 @@ impl Fixture {
         RawContext {
             product: "ak".to_string(),
             trial: "xx".to_string(),
-            purpose: "final".to_string(),
+            purpose: Some("final".to_string()),
             root_path: self.root.path().to_path_buf(),
             project_root,
             study: None,
@@ -275,6 +275,22 @@ fn interpolates_purpose_and_study_into_directory_and_file_names() {
             .join("AK-XX Validation Review Tracker.xlsx")
             .is_file()
     );
+}
+
+#[test]
+fn skips_the_purpose_branch_when_the_context_carries_no_purpose() {
+    let fixture = Fixture::new();
+    let mut raw = fixture.raw_context(None);
+    raw.purpose = None;
+
+    let context = Context::build(raw).unwrap();
+    let project_root = context.project_root.clone();
+    project_scaffolding(ProjectScaffoldConfig::build(&context).unwrap()).unwrap();
+
+    // The `{{ purpose }}` branch has no value to resolve to, so it is left out —
+    // the rest of the tree is unaffected.
+    assert!(project_root.join("stats").join("cutoff").is_dir());
+    assert!(!project_root.join("stats").join("final").exists());
 }
 
 #[test]
@@ -376,7 +392,7 @@ fn reports_a_missing_reference_file() {
     let context = Context::build(RawContext {
         product: "ak".to_string(),
         trial: "xx".to_string(),
-        purpose: "final".to_string(),
+        purpose: Some("final".to_string()),
         root_path: root.path().to_path_buf(),
         project_root: None,
         study: None,
@@ -415,7 +431,7 @@ fn reports_a_missing_migration_directory() {
     let context = Context::build(RawContext {
         product: "ak".to_string(),
         trial: "xx".to_string(),
-        purpose: "final".to_string(),
+        purpose: Some("final".to_string()),
         root_path: root.path().to_path_buf(),
         project_root: None,
         study: None,

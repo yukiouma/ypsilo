@@ -10,14 +10,15 @@ use std::{
 /// `String`, `&Path`, or `PathBuf` without converting first. Both parameters default to
 /// the owning types, so existing callers are unaffected.
 ///
-/// `project_root` and `study` are optional: omit them with `..Default::default()`, or
-/// start from [`RawContext::new`] and set them with [`RawContext::with_project_root`]
-/// and [`RawContext::with_study`].
+/// `purpose`, `project_root` and `study` are optional: omit them with
+/// `..Default::default()`, or start from [`RawContext::new`] and set them with
+/// [`RawContext::with_purpose`], [`RawContext::with_project_root`] and
+/// [`RawContext::with_study`].
 #[derive(Debug, Clone, Default)]
 pub struct RawContext<P = PathBuf, S = String> {
     pub product: S,
     pub trial: S,
-    pub purpose: S,
+    pub purpose: Option<S>,
     pub root_path: P,
     pub project_root: Option<P>,
     pub study: Option<S>,
@@ -27,16 +28,22 @@ pub struct RawContext<P = PathBuf, S = String> {
 impl<P, S> RawContext<P, S> {
     /// Build a context from the required fields, leaving the optional ones unset so
     /// [`Context::build`] derives them.
-    pub fn new(product: S, trial: S, purpose: S, root_path: P, config_path: P) -> Self {
+    pub fn new(product: S, trial: S, root_path: P, config_path: P) -> Self {
         Self {
             product,
             trial,
-            purpose,
+            purpose: None,
             root_path,
             project_root: None,
             study: None,
             config_path,
         }
+    }
+
+    /// Supply an explicit `purpose` instead of leaving it unset.
+    pub fn with_purpose(mut self, purpose: S) -> Self {
+        self.purpose = Some(purpose);
+        self
     }
 
     /// Supply an explicit `project_root` instead of letting it be derived.
@@ -59,8 +66,8 @@ pub struct Context {
     pub product: String,
     /// Uppercased.
     pub trial: String,
-    /// Unchanged.
-    pub purpose: String,
+    /// Unchanged, when given.
+    pub purpose: Option<String>,
     /// Verified to exist.
     pub root_path: PathBuf,
     /// Either the verified explicit path, or derived under `root_path`.
@@ -115,7 +122,7 @@ impl Context {
         Ok(Self {
             product,
             trial,
-            purpose: raw.purpose.as_ref().to_string(),
+            purpose: raw.purpose.map(|purpose| purpose.as_ref().to_string()),
             root_path,
             project_root,
             study,
@@ -124,11 +131,13 @@ impl Context {
     }
 
     /// The variables a config template may reference.
+    ///
+    /// `purpose` is only offered when the context carries one, so a template that
+    /// names it is left unresolved rather than rendered as an empty string.
     pub fn template_vars(&self) -> HashMap<String, String> {
-        HashMap::from([
+        let mut vars = HashMap::from([
             ("product".to_string(), self.product.clone()),
             ("trial".to_string(), self.trial.clone()),
-            ("purpose".to_string(), self.purpose.clone()),
             (
                 "root_path".to_string(),
                 self.root_path.display().to_string(),
@@ -138,7 +147,13 @@ impl Context {
                 self.project_root.display().to_string(),
             ),
             ("study".to_string(), self.study.clone()),
-        ])
+        ]);
+
+        if let Some(purpose) = &self.purpose {
+            vars.insert("purpose".to_string(), purpose.clone());
+        }
+
+        vars
     }
 }
 
@@ -154,7 +169,7 @@ mod tests {
         RawContext {
             product: "ak".to_string(),
             trial: "xx".to_string(),
-            purpose: "final".to_string(),
+            purpose: Some("final".to_string()),
             root_path: root.path().to_path_buf(),
             project_root: None,
             study: None,
@@ -181,7 +196,17 @@ mod tests {
         let dir = TempDir::new().unwrap();
         touch_config(&dir);
         let context = Context::build(raw(&dir)).unwrap();
-        assert_eq!(context.purpose, "final");
+        assert_eq!(context.purpose.as_deref(), Some("final"));
+    }
+
+    #[test]
+    fn keeps_an_absent_purpose_absent() {
+        let dir = TempDir::new().unwrap();
+        touch_config(&dir);
+        let mut input = raw(&dir);
+        input.purpose = None;
+        let context = Context::build(input).unwrap();
+        assert_eq!(context.purpose, None);
     }
 
     #[test]
@@ -269,6 +294,16 @@ mod tests {
             context.project_root.display().to_string()
         );
     }
+
+    #[test]
+    fn omits_purpose_from_the_template_variables_when_it_is_absent() {
+        let dir = TempDir::new().unwrap();
+        touch_config(&dir);
+        let mut input = raw(&dir);
+        input.purpose = None;
+        let context = Context::build(input).unwrap();
+        assert!(!context.template_vars().contains_key("purpose"));
+    }
 }
 
 #[cfg(test)]
@@ -291,7 +326,7 @@ mod generic_path_tests {
         let context = Context::build(RawContext {
             product: "ak".to_string(),
             trial: "xx".to_string(),
-            purpose: "final".to_string(),
+            purpose: Some("final".to_string()),
             root_path: root.as_str(),
             project_root: None,
             study: None,
@@ -314,7 +349,7 @@ mod generic_path_tests {
         let context = Context::build(RawContext {
             product: "ak".to_string(),
             trial: "xx".to_string(),
-            purpose: "final".to_string(),
+            purpose: Some("final".to_string()),
             root_path: dir.path().to_str().unwrap().to_string(),
             project_root: Some(explicit.to_str().unwrap().to_string()),
             study: Some("AK-999".to_string()),
@@ -344,7 +379,7 @@ mod generic_str_tests {
         let context = Context::build(RawContext {
             product: "ak",
             trial: "xx",
-            purpose: "final",
+            purpose: Some("final"),
             root_path: root.as_str(),
             project_root: None,
             study: None,
@@ -354,7 +389,7 @@ mod generic_str_tests {
 
         assert_eq!(context.product, "AK");
         assert_eq!(context.trial, "XX");
-        assert_eq!(context.purpose, "final");
+        assert_eq!(context.purpose.as_deref(), Some("final"));
         assert_eq!(context.study, "AK-XX");
     }
 
@@ -372,7 +407,7 @@ mod generic_str_tests {
         let context = Context::build(RawContext {
             product: "ak",
             trial: "xx",
-            purpose: "final",
+            purpose: Some("final"),
             root_path: root.as_str(),
             project_root: Some(explicit.as_str()),
             study: Some("AK-999"),
@@ -407,7 +442,7 @@ mod defaults_tests {
         let context = Context::build(RawContext {
             product: "ak",
             trial: "xx",
-            purpose: "final",
+            purpose: Some("final"),
             root_path: root.as_str(),
             config_path: config_path.as_str(),
             ..Default::default()
@@ -426,7 +461,6 @@ mod defaults_tests {
         let context = Context::build(RawContext::new(
             "ak",
             "xx",
-            "final",
             root.as_str(),
             config_path.as_str(),
         ))
@@ -444,7 +478,8 @@ mod defaults_tests {
         fs::create_dir(&explicit).unwrap();
 
         let context = Context::build(
-            RawContext::new("ak", "xx", "final", root.as_str(), config_path.as_str())
+            RawContext::new("ak", "xx", root.as_str(), config_path.as_str())
+                .with_purpose("final")
                 .with_study("AK-999")
                 .with_project_root(explicit.to_str().unwrap()),
         )
@@ -458,6 +493,7 @@ mod defaults_tests {
     #[test]
     fn default_raw_context_leaves_optionals_unset() {
         let raw: RawContext = RawContext::default();
+        assert!(raw.purpose.is_none());
         assert!(raw.project_root.is_none());
         assert!(raw.study.is_none());
     }

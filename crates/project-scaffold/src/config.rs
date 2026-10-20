@@ -18,7 +18,11 @@ pub struct ProjectScaffoldConfig {
 #[serde(rename_all = "camelCase")]
 pub struct Node {
     /// File or directory name. May contain `{{ ... }}` placeholders.
-    pub name: String,
+    ///
+    /// `None` when the config omits the name, or when a placeholder in the name
+    /// has no value to resolve to. Such a node is skipped.
+    #[serde(default)]
+    pub name: Option<String>,
     pub directory: bool,
     /// Absolute path to a file copied to `name`.
     #[serde(default)]
@@ -59,7 +63,7 @@ impl ProjectScaffoldConfig {
     }
 
     fn resolve(&mut self, vars: &HashMap<String, String>) -> Result<()> {
-        self.project_root = template::render(&self.project_root, vars)?;
+        self.project_root = template::render_required(&self.project_root, vars)?;
         for node in &mut self.directories {
             node.resolve(vars)?;
         }
@@ -69,7 +73,12 @@ impl ProjectScaffoldConfig {
 
 impl Node {
     fn resolve(&mut self, vars: &HashMap<String, String>) -> Result<()> {
-        self.name = template::render(&self.name, vars)?;
+        // A name whose placeholder has no value resolves to nothing, and the node
+        // is left without a name — the scaffolding walk skips it.
+        self.name = match &self.name {
+            Some(name) => template::render(name, vars),
+            None => None,
+        };
         for child in &mut self.children {
             child.resolve(vars)?;
         }
@@ -90,7 +99,7 @@ mod tests {
         Context::build(RawContext {
             product: "ak".to_string(),
             trial: "xx".to_string(),
-            purpose: "final".to_string(),
+            purpose: Some("final".to_string()),
             root_path: dir.path().to_path_buf(),
             project_root: None,
             study: None,
@@ -138,10 +147,13 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let context = context_for(&dir, NESTED);
         let config = ProjectScaffoldConfig::build(&context).unwrap();
-        assert_eq!(config.directories[0].name, "documents");
+        assert_eq!(config.directories[0].name.as_deref(), Some("documents"));
         let specs = &config.directories[0].children[0];
-        assert_eq!(specs.name, "specs");
-        assert_eq!(specs.children[0].name, "AK-XX SDTM Specification v1.0.xlsx");
+        assert_eq!(specs.name.as_deref(), Some("specs"));
+        assert_eq!(
+            specs.children[0].name.as_deref(),
+            Some("AK-XX SDTM Specification v1.0.xlsx")
+        );
     }
 
     #[test]
@@ -198,7 +210,22 @@ mod tests {
     }
 
     #[test]
-    fn reports_an_unknown_placeholder_key() {
+    fn reports_an_unknown_placeholder_key_in_the_project_root() {
+        let dir = TempDir::new().unwrap();
+        let context = context_for(
+            &dir,
+            r#"{"projectRoot": "{{ unknown_key }}", "directories": [
+                {"name": "plain", "directory": true}
+            ]}"#,
+        );
+        assert!(matches!(
+            ProjectScaffoldConfig::build(&context),
+            Err(ScaffoldError::UnknownTemplateKey { .. })
+        ));
+    }
+
+    #[test]
+    fn leaves_a_node_unnamed_when_its_name_has_no_resolvable_key() {
         let dir = TempDir::new().unwrap();
         let context = context_for(
             &dir,
@@ -206,9 +233,20 @@ mod tests {
                 {"name": "{{ unknown_key }}", "directory": true}
             ]}"#,
         );
-        assert!(matches!(
-            ProjectScaffoldConfig::build(&context),
-            Err(ScaffoldError::UnknownTemplateKey { .. })
-        ));
+        let config = ProjectScaffoldConfig::build(&context).unwrap();
+        assert_eq!(config.directories[0].name, None);
+    }
+
+    #[test]
+    fn leaves_a_node_unnamed_when_the_config_omits_its_name() {
+        let dir = TempDir::new().unwrap();
+        let context = context_for(
+            &dir,
+            r#"{"projectRoot": "{{ project_root }}", "directories": [
+                {"directory": true}
+            ]}"#,
+        );
+        let config = ProjectScaffoldConfig::build(&context).unwrap();
+        assert_eq!(config.directories[0].name, None);
     }
 }
