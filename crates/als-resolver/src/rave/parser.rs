@@ -4,7 +4,7 @@ use crate::rave::data_dictionary::parse_data_dictionaries;
 use crate::rave::fields::parse_fields;
 use crate::rave::folders::parse_folders;
 use crate::rave::forms::parse_forms;
-use crate::rave::matrices::{find_master_matrix_sheet, parse_matrix_master};
+use crate::rave::matrices::{find_study_matrix_sheet, parse_matrix_master};
 use crate::traits::AlsParser;
 use entities::project::Project;
 use quick_xml::Reader;
@@ -27,47 +27,70 @@ impl AlsParser for RaveParser {
         reader.read_to_end(&mut bytes)?;
 
         // Phase 1: Load DataDictionaries
-        let mut reader = Reader::from_reader(bytes.as_slice());
-        reader.config_mut().trim_text(true);
-        navigate_to_worksheet(&mut reader, "DataDictionaryEntries")?;
-        parse_data_dictionaries(&mut reader, &mut context)?;
+        {
+            let mut reader = open_sheet(&bytes, "DataDictionaryEntries")?;
+            parse_data_dictionaries(&mut reader, &mut context)?;
+        }
 
         // Phase 2: Parse Forms
-        reader = Reader::from_reader(bytes.as_slice());
-        reader.config_mut().trim_text(true);
-        navigate_to_worksheet(&mut reader, "Forms")?;
-        parse_forms(&mut reader, &mut context)?;
+        {
+            let mut reader = open_sheet(&bytes, "Forms")?;
+            parse_forms(&mut reader, &mut context)?;
+        }
 
         // Phase 3: Parse Fields
-        reader = Reader::from_reader(bytes.as_slice());
-        reader.config_mut().trim_text(true);
-        navigate_to_worksheet(&mut reader, "Fields")?;
-        parse_fields(&mut reader, &mut context)?;
+        {
+            let mut reader = open_sheet(&bytes, "Fields")?;
+            parse_fields(&mut reader, &mut context)?;
+        }
 
         // Phase 4: Parse Folders to create Visit structs
-        reader = Reader::from_reader(bytes.as_slice());
-        reader.config_mut().trim_text(true);
-        navigate_to_worksheet(&mut reader, "Folders")?;
-        parse_folders(&mut reader, &mut context)?;
+        {
+            let mut reader = open_sheet(&bytes, "Folders")?;
+            parse_folders(&mut reader, &mut context)?;
+        }
 
-        // Phase 5: Parse Matrix#MASTER to populate Visit.forms
+        // Phase 5: Parse the study matrix to populate Visit.forms
+        if let Some(matrix_sheet) = find_study_matrix(&bytes)? {
+            let mut reader = open_sheet(&bytes, &matrix_sheet)?;
+            parse_matrix_master(&mut reader, &mut context)?;
+        }
 
-        // Find out the name of MASTER sheet, the sheet name will be something like "Matrix121#MASTER"
-        reader = Reader::from_reader(bytes.as_slice());
-        reader.config_mut().trim_text(true);
-        navigate_to_worksheet(&mut reader, "Matrices")?;
-        let master_sheet_name = find_master_matrix_sheet(&mut reader)?;
+        let mut forms: Vec<_> = context.forms.into_values().collect();
+        forms.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
 
-        reader = Reader::from_reader(bytes.as_slice());
-        reader.config_mut().trim_text(true);
-        navigate_to_worksheet(&mut reader, &master_sheet_name)?;
-        parse_matrix_master(&mut reader, &mut context)?;
+        let mut visits = context.visits;
+        visits.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.code.cmp(&b.code)));
 
         Ok(Project {
-            forms: context.forms.into_values().collect(),
-            visit: context.visits,
+            forms,
+            visit: visits,
         })
     }
+}
+
+/// Open the reader on the given worksheet of the workbook.
+fn open_sheet<'a>(
+    bytes: &'a [u8],
+    worksheet_name: &str,
+) -> Result<Reader<&'a [u8]>, AlsParseError> {
+    let mut reader = Reader::from_reader(bytes);
+    // `<Cell/>` and `<Data/>` are written as empty elements, expanding them
+    // keeps the start/end events of every cell balanced.
+    reader.config_mut().expand_empty_elements = true;
+    navigate_to_worksheet(&mut reader, worksheet_name)?;
+    Ok(reader)
+}
+
+/// Find the worksheet holding the study wide matrix, if the workbook has one.
+fn find_study_matrix(bytes: &[u8]) -> Result<Option<String>, AlsParseError> {
+    let mut reader = match open_sheet(bytes, "Matrices") {
+        Ok(reader) => reader,
+        // A workbook without matrices still holds forms and visits.
+        Err(AlsParseError::WorksheetNotFound(_)) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    find_study_matrix_sheet(&mut reader)
 }
 
 /// Navigate to a worksheet by name.

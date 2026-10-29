@@ -1,205 +1,99 @@
 use crate::error::AlsParseError;
 use crate::rave::context::ParseContext;
+use crate::rave::sheet::SheetRows;
 use entities::project::{CRFItem, ControlType};
 use quick_xml::Reader;
-use quick_xml::escape::unescape;
-use quick_xml::events::Event;
 
 /// Parse the Fields worksheet and populate form items (stop at worksheet boundary).
 pub fn parse_fields<R: std::io::BufRead>(
     reader: &mut Reader<R>,
     context: &mut ParseContext,
 ) -> Result<(), AlsParseError> {
-    let mut buffer = Vec::new();
-    let mut current_row: Vec<String> = Vec::new();
-    let mut in_data_cell = false;
-    let mut current_cell_index = 0;
+    for row in SheetRows::new(reader) {
+        let row = row?;
+        if row.len() < 37 || row[0] == "FormOID" {
+            // Not a field row — either the header or a row without the columns
+            // the parser reads.
+            continue;
+        }
+        // Skip fields whose ViewRestrictions column (index 41, column AP) is
+        // populated — those fields are restricted to specific roles and should
+        // not appear in the CRF.
+        if row.get(41).is_some_and(|value| !value.is_empty()) {
+            continue;
+        }
 
-    loop {
-        buffer.clear();
-        match reader.read_event_into(&mut buffer) {
-            Ok(Event::Eof) => break,
-            Ok(Event::End(e)) if e.name().as_ref() == b"Worksheet" => {
-                break;
+        let form_oid = row[0].clone();
+        let field_oid = row[1].clone();
+        let _ordinal = row[2].parse::<i32>().unwrap_or(0);
+        let draft_field_name = row[4].clone();
+        let variable_oid = row[6].clone();
+        let data_format = row[7].clone();
+        let data_dictionary_name = row[8].clone();
+        let control_type_str = row[11].clone();
+        let pre_text = row[14].clone();
+        let fixed_unit = row[15].clone();
+
+        // Get options from DataDictionary if present
+        let item_option = if data_dictionary_name.is_empty() {
+            None
+        } else {
+            let options = context.get_options(&data_dictionary_name);
+            if options.is_empty() {
+                None
+            } else {
+                Some(options)
             }
-            Ok(Event::Start(e)) => {
-                match e.name().as_ref() {
-                    b"Row" => {
-                        current_row.clear();
-                        current_cell_index = 0;
-                    }
-                    b"Cell" => {
-                        // Check for ss:Index attribute to handle skipped columns
-                        for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"ss:Index" {
-                                if let Ok(idx_str) = std::str::from_utf8(attr.value.as_ref()) {
-                                    if let Ok(idx) = idx_str.parse::<usize>() {
-                                        while current_row.len() < idx {
-                                            current_row.push(String::new());
-                                        }
-                                        current_cell_index = idx - 1;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    b"Data" => {
-                        in_data_cell = true;
-                    }
-                    _ => {}
-                }
-            }
-            Ok(Event::End(e)) => {
-                match e.name().as_ref() {
-                    b"Row" => {
-                        // Process completed row (skip header row)
-                        if current_row.len() >= 37
-                            && current_row[0] != "FormOID"
-                            // Skip fields whose ViewRestrictions column (index 41,
-                            // column AP) is populated — those fields are restricted
-                            // to specific roles and should not appear in the CRF.
-                            && current_row.get(41).is_none_or(|v| v.is_empty())
-                        {
-                            let form_oid = current_row[0].clone();
-                            let field_oid = current_row[1].clone();
-                            let _ordinal = current_row[2].parse::<i32>().unwrap_or(0);
-                            let draft_field_name = current_row[4].clone();
-                            let variable_oid = current_row[6].clone();
-                            let data_format = current_row[7].clone();
-                            let data_dictionary_name = current_row[8].clone();
-                            let control_type_str = current_row[11].clone();
-                            let pre_text = current_row[14].clone();
-                            let fixed_unit = current_row[15].clone();
+        };
 
-                            // Get options from DataDictionary if present
-                            let item_option = if !data_dictionary_name.is_empty() {
-                                let options = context.get_options(&data_dictionary_name);
-                                if options.is_empty() {
-                                    None
-                                } else {
-                                    Some(options)
-                                }
-                            } else {
-                                None
-                            };
+        // Map control type string to ControlType enum.
+        // The keys here are the literal strings produced by RAVE in the
+        // Fields worksheet; anything unrecognized falls back to TEXT.
+        let control_type = match control_type_str.as_str() {
+            "DateTime" => ControlType::DATETIME,
+            "CheckBox" => ControlType::CHECKBOX,
+            "DropDownList" => ControlType::SELECTION,
+            "RadioButton" => ControlType::SELECTION,
+            "RadioButton (Vertical)" => ControlType::SELECTION,
+            _ => ControlType::TEXT,
+        };
 
-                            // Map control type string to ControlType enum.
-                            // The keys here are the literal strings produced by RAVE in the
-                            // Fields worksheet; anything unrecognized falls back to TEXT.
-                            let control_type = match control_type_str.as_str() {
-                                "DateTime" => ControlType::DATETIME,
-                                "CheckBox" => ControlType::CHECKBOX,
-                                "DropDownList" => ControlType::SELECTION,
-                                "RadioButton" => ControlType::SELECTION,
-                                "RadioButton (Vertical)" => ControlType::SELECTION,
-                                _ => ControlType::TEXT,
-                            };
+        // Use PreText as label if available, otherwise DraftFieldName
+        let label = if !pre_text.is_empty() {
+            pre_text
+        } else if !draft_field_name.is_empty() {
+            draft_field_name
+        } else {
+            "".into()
+        };
 
-                            // Use PreText as label if available, otherwise DraftFieldName
-                            let label = if !pre_text.is_empty() {
-                                pre_text
-                            } else if !draft_field_name.is_empty() {
-                                draft_field_name
-                            } else {
-                                "".into()
-                            };
+        let item_unit = if fixed_unit.is_empty() {
+            None
+        } else {
+            Some(entities::project::ItemUnit {
+                value: fixed_unit,
+                annotations: Vec::new(),
+            })
+        };
 
-                            let item_unit = if !fixed_unit.is_empty() {
-                                Some(entities::project::ItemUnit {
-                                    value: fixed_unit,
-                                    annotations: Vec::new(),
-                                })
-                            } else {
-                                None
-                            };
+        let item = CRFItem {
+            name: field_oid,
+            label,
+            item_option,
+            annotations: Vec::new(),
+            format: data_format,
+            control_type,
+            item_unit,
+            not_variable: if variable_oid.is_empty() {
+                Some(true)
+            } else {
+                None
+            },
+        };
 
-                            let item = CRFItem {
-                                name: field_oid,
-                                label,
-                                item_option,
-                                annotations: Vec::new(),
-                                format: data_format,
-                                control_type,
-                                item_unit,
-                                not_variable: if variable_oid.is_empty() {
-                                    Some(true)
-                                } else {
-                                    None
-                                },
-                            };
-
-                            // Add item to the corresponding form
-                            if let Some(form) = context.forms.get_mut(&form_oid) {
-                                form.items.push(item);
-                            }
-                        }
-                        current_row.clear();
-                    }
-                    b"Data" => {
-                        // End of one <Data> element: advance to the next cell.
-                        // Cell text (including any split by entity references) is now
-                        // complete in current_row[current_cell_index]. Pad with empty
-                        // strings so that cells with no Text event (e.g. <Data/>) still
-                        // occupy a slot in the row.
-                        in_data_cell = false;
-                        while current_row.len() <= current_cell_index {
-                            current_row.push(String::new());
-                        }
-                        current_cell_index += 1;
-                    }
-                    _ => {}
-                }
-            }
-            Ok(Event::Text(e)) => {
-                if in_data_cell {
-                    let decoded = e
-                        .decode()
-                        .map_err(|e| AlsParseError::XmlError(e.to_string()))?;
-                    let text =
-                        unescape(&decoded).map_err(|e| AlsParseError::XmlError(e.to_string()))?;
-                    while current_row.len() <= current_cell_index {
-                        current_row.push(String::new());
-                    }
-                    // Append to the current cell instead of overwriting. quick-xml
-                    // splits text content at entity references, so a single <Data>
-                    // element containing `&gt;` etc. emits multiple Text events;
-                    // they all belong to the same cell.
-                    current_row[current_cell_index].push_str(&text);
-                }
-            }
-            Ok(Event::GeneralRef(e)) => {
-                if in_data_cell {
-                    // quick-xml emits a GeneralRef event for each XML entity
-                    // reference inside text content (e.g. `&gt;` -> "gt"). Decode
-                    // it back to its character so it joins the surrounding text.
-                    let entity_name =
-                        std::str::from_utf8(e.as_ref()).map_err(|err| AlsParseError::XmlError(err.to_string()))?;
-                    let decoded_char = match entity_name {
-                        "amp" => '&',
-                        "lt" => '<',
-                        "gt" => '>',
-                        "quot" => '"',
-                        "apos" => '\'',
-                        other => {
-                            // Unknown/numeric entity: best-effort fallback. quick-xml
-                            // represents numeric references with their resolved char
-                            // in the surrounding Text event, so reaching here means
-                            // the entity is unsupported. Drop the reference rather
-                            // than inject a stray `&`.
-                            let _ = other;
-                            return Err(AlsParseError::XmlError(format!(
-                                "Unsupported XML entity reference: &{other};"
-                            )));
-                        }
-                    };
-                    while current_row.len() <= current_cell_index {
-                        current_row.push(String::new());
-                    }
-                    current_row[current_cell_index].push(decoded_char);
-                }
-            }
-            Ok(_) => {}
-            Err(e) => return Err(AlsParseError::XmlError(e.to_string())),
+        // Add item to the corresponding form
+        if let Some(form) = context.forms.get_mut(&form_oid) {
+            form.items.push(item);
         }
     }
 
@@ -267,17 +161,21 @@ mod tests {
         context
     }
 
+    fn parse(xml: &str, context: &mut ParseContext) {
+        let mut reader = Reader::from_str(xml);
+        reader.config_mut().expand_empty_elements = true;
+        parse_fields(&mut reader, context).unwrap();
+    }
+
     #[test]
     fn cell_with_entity_reference_is_not_split() {
         // This is the exact scenario from the bug report: a PreText cell whose
         // raw value contains `&gt;` must be parsed as a single, intact string.
         let pre_text = "Infusion-related reactions (grade>= 3)";
         let xml = build_row_xml(pre_text, "SV", "SVFOO");
-        let mut reader = Reader::from_str(&xml);
-        reader.config_mut().trim_text(true);
         let mut context = make_context("SV");
 
-        parse_fields(&mut reader, &mut context).unwrap();
+        parse(&xml, &mut context);
 
         let form = context.forms.get("SV").expect("form should exist");
         assert_eq!(form.items.len(), 1, "exactly one item should be parsed");
@@ -285,15 +183,38 @@ mod tests {
     }
 
     #[test]
+    fn cell_with_numeric_character_reference_is_parsed() {
+        // Rave stores multi line values (edit check code) using numeric
+        // character references for the line breaks.
+        let xml = r#"<Row>
+            <Cell><Data>SV</Data></Cell>
+            <Cell><Data>SVMULTI</Data></Cell>
+            <Cell><Data>1</Data></Cell>
+            <Cell ss:Index="5"><Data>SVMULTI</Data></Cell>
+            <Cell ss:Index="6"><Data>TRUE</Data></Cell>
+            <Cell ss:Index="7"><Data>SITE_ID</Data></Cell>
+            <Cell ss:Index="8"><Data>$4</Data></Cell>
+            <Cell ss:Index="12"><Data>Text</Data></Cell>
+            <Cell ss:Index="15"><Data>first line&#13;&#10;second line</Data></Cell>
+            <Cell ss:Index="37"><Data>unused</Data></Cell>
+        </Row>"#;
+        let mut context = make_context("SV");
+
+        parse(xml, &mut context);
+
+        let form = context.forms.get("SV").unwrap();
+        assert_eq!(form.items.len(), 1);
+        assert_eq!(form.items[0].label, "first line\r\nsecond line");
+    }
+
+    #[test]
     fn cell_without_entity_reference_still_parses() {
         // Regression check: cells with plain text must still end up in the
         // correct slot after the cell-indexing change.
         let xml = build_row_xml("Visit Date", "SV", "SVDAT");
-        let mut reader = Reader::from_str(&xml);
-        reader.config_mut().trim_text(true);
         let mut context = make_context("SV");
 
-        parse_fields(&mut reader, &mut context).unwrap();
+        parse(&xml, &mut context);
 
         let form = context.forms.get("SV").unwrap();
         assert_eq!(form.items.len(), 1);
@@ -304,19 +225,17 @@ mod tests {
     #[test]
     fn field_with_view_restrictions_is_filtered_out() {
         // Column AP (index 41) is "ViewRestrictions". When populated, the
-        // field is restricted to specific roles and must not be added to
-        // the form's items.
+        // field is restricted to specific roles and must not be added to the
+        // form's items.
         let xml = build_row_xml_with_view_restrictions(
             "Restricted Field",
             "SV",
             "SVRESTRICTED",
             Some("Investigator"),
         );
-        let mut reader = Reader::from_str(&xml);
-        reader.config_mut().trim_text(true);
         let mut context = make_context("SV");
 
-        parse_fields(&mut reader, &mut context).unwrap();
+        parse(&xml, &mut context);
 
         let form = context.forms.get("SV").unwrap();
         assert!(
@@ -330,21 +249,41 @@ mod tests {
     fn field_with_empty_view_restrictions_is_kept() {
         // A blank ViewRestrictions cell means the field is not restricted
         // and must be added normally.
-        let xml = build_row_xml_with_view_restrictions(
-            "Open Field",
-            "SV",
-            "SVOPEN",
-            Some(""),
-        );
-        let mut reader = Reader::from_str(&xml);
-        reader.config_mut().trim_text(true);
+        let xml = build_row_xml_with_view_restrictions("Open Field", "SV", "SVOPEN", Some(""));
         let mut context = make_context("SV");
 
-        parse_fields(&mut reader, &mut context).unwrap();
+        parse(&xml, &mut context);
 
         let form = context.forms.get("SV").unwrap();
         assert_eq!(form.items.len(), 1);
         assert_eq!(form.items[0].label, "Open Field");
         assert_eq!(form.items[0].name, "SVOPEN");
+    }
+
+    #[test]
+    fn cells_are_placed_by_their_ss_index() {
+        // A cell carrying ss:Index is placed at that (1-based) column, the
+        // other cells follow it.
+        let xml = r#"<Row>
+            <Cell><Data>SV</Data></Cell>
+            <Cell><Data>SVDAT</Data></Cell>
+            <Cell><Data>1</Data></Cell>
+            <Cell ss:Index="5"><Data>SVDAT</Data></Cell>
+            <Cell ss:Index="6"><Data>TRUE</Data></Cell>
+            <Cell ss:Index="7"><Data>SITE_ID</Data></Cell>
+            <Cell ss:Index="8"><Data>$4</Data></Cell>
+            <Cell ss:Index="12"><Data>Text</Data></Cell>
+            <Cell ss:Index="15"><Data>Visit Date</Data></Cell>
+            <Cell ss:Index="37"><Data>unused</Data></Cell>
+        </Row>"#;
+        let mut context = make_context("SV");
+
+        parse(xml, &mut context);
+
+        let form = context.forms.get("SV").unwrap();
+        assert_eq!(form.items.len(), 1);
+        assert_eq!(form.items[0].name, "SVDAT");
+        assert_eq!(form.items[0].label, "Visit Date");
+        assert_eq!(form.items[0].format, "$4");
     }
 }
