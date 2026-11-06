@@ -99,7 +99,7 @@ mod tests {
         Context::build(RawContext {
             product: "ak".to_string(),
             trial: "xx".to_string(),
-            purpose: Some("final".to_string()),
+            branch: Some("final".to_string()),
             root_path: dir.path().to_path_buf(),
             project_root: None,
             study: None,

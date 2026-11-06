@@ -10,6 +10,9 @@
 
 **Design spec:** [`docs/superpowers/specs/2026-10-19-project-scaffold-design.md`](../specs/2026-10-19-project-scaffold-design.md)
 
+> **Revised 2026-11-06:** the `purpose` field and the `{{ purpose }}` template variable are
+> now called `branch`. Every snippet below uses the new name.
+
 ## Global Constraints
 
 - Every crate uses `edition = "2024"` and lives under `crates/`.
@@ -205,7 +208,7 @@ use std::{collections::HashMap, path::PathBuf};
 pub struct RawContext {
     pub product: String,
     pub trial: String,
-    pub purpose: String,
+    pub branch: String,
     pub root_path: PathBuf,
     pub project_root: Option<PathBuf>,
     pub study: Option<String>,
@@ -216,7 +219,7 @@ pub struct RawContext {
 pub struct Context {
     pub product: String,
     pub trial: String,
-    pub purpose: String,
+    pub branch: String,
     pub root_path: PathBuf,
     pub project_root: PathBuf,
     pub study: String,
@@ -333,7 +336,7 @@ mod tests {
     fn vars() -> HashMap<String, String> {
         HashMap::from([
             ("study".to_string(), "AK-001".to_string()),
-            ("purpose".to_string(), "final".to_string()),
+            ("branch".to_string(), "final".to_string()),
         ])
     }
 
@@ -357,7 +360,7 @@ mod tests {
 
     #[test]
     fn substitutes_several_placeholders_in_one_template() {
-        assert_eq!(render("{{ study }}-{{ purpose }}", &vars()).unwrap(), "AK-001-final");
+        assert_eq!(render("{{ study }}-{{ branch }}", &vars()).unwrap(), "AK-001-final");
     }
 
     #[test]
@@ -487,7 +490,7 @@ mod tests {
         RawContext {
             product: "ak".to_string(),
             trial: "xx".to_string(),
-            purpose: "final".to_string(),
+            branch: "final".to_string(),
             root_path: root.path().to_path_buf(),
             project_root: None,
             study: None,
@@ -510,11 +513,11 @@ mod tests {
     }
 
     #[test]
-    fn leaves_purpose_untouched() {
+    fn leaves_branch_untouched() {
         let dir = TempDir::new().unwrap();
         touch_config(&dir);
         let context = Context::build(raw(&dir)).unwrap();
-        assert_eq!(context.purpose, "final");
+        assert_eq!(context.branch, "final");
     }
 
     #[test]
@@ -588,7 +591,7 @@ mod tests {
         let vars = context.template_vars();
         assert_eq!(vars["product"], "AK");
         assert_eq!(vars["trial"], "XX");
-        assert_eq!(vars["purpose"], "final");
+        assert_eq!(vars["branch"], "final");
         assert_eq!(vars["study"], "AK-XX");
         assert_eq!(vars["root_path"], dir.path().display().to_string());
         assert_eq!(vars["project_root"], context.project_root.display().to_string());
@@ -651,7 +654,7 @@ impl Context {
         Ok(Self {
             product,
             trial,
-            purpose: raw.purpose,
+            branch: raw.branch,
             root_path: raw.root_path,
             project_root,
             study,
@@ -664,7 +667,7 @@ impl Context {
         HashMap::from([
             ("product".to_string(), self.product.clone()),
             ("trial".to_string(), self.trial.clone()),
-            ("purpose".to_string(), self.purpose.clone()),
+            ("branch".to_string(), self.branch.clone()),
             ("root_path".to_string(), self.root_path.display().to_string()),
             (
                 "project_root".to_string(),
@@ -731,7 +734,7 @@ mod tests {
         Context::build(RawContext {
             product: "ak".to_string(),
             trial: "xx".to_string(),
-            purpose: "final".to_string(),
+            branch: "final".to_string(),
             root_path: dir.path().to_path_buf(),
             project_root: None,
             study: None,
@@ -1551,8 +1554,8 @@ Replace each `reference` value and the `migration.directory` value in `.mock_dat
 | `documents → specs → SDTM specification` → `reference` | `/root/coding/project/ypsilo/.mock_data/project-scaffold/references/AKxxx-xxx SDTM Specification_template v1.0.xlsx` |
 | `documents → specs → ADaM specification` → `reference` | `/root/coding/project/ypsilo/.mock_data/project-scaffold/references/AKxxx-xxx ADaM Specification_template v1.0.xlsx` |
 | `documents → project management → data issues tracking log → Data Issue Log` → `reference` | `/root/coding/project/ypsilo/.mock_data/project-scaffold/references/CL-CSP-DOC-005-A02 数据问题记录表 Data Issue Log-V1.0.xlsx` |
-| `stats → {{ purpose }} → utility → Validation Review Tracker` → `reference` | `/root/coding/project/ypsilo/.mock_data/project-scaffold/references/CL-CSP-DOC-002-A01 质量控制追踪表 Validation Review Tracker-V2.0.xlsx` |
-| `stats → {{ purpose }} → macros` → `migration.directory` | `/root/coding/project/ypsilo/.mock_data/project-scaffold/references/general-marcos` |
+| `stats → {{ branch }} → utility → Validation Review Tracker` → `reference` | `/root/coding/project/ypsilo/.mock_data/project-scaffold/references/CL-CSP-DOC-002-A01 质量控制追踪表 Validation Review Tracker-V2.0.xlsx` |
+| `stats → {{ branch }} → macros` → `migration.directory` | `/root/coding/project/ypsilo/.mock_data/project-scaffold/references/general-marcos` |
 
 Leave every other field — including `"filter": [".sas"]` — untouched.
 
@@ -1591,7 +1594,7 @@ fn raw_context(root: &Path, project_root: Option<PathBuf>, config_path: PathBuf)
     RawContext {
         product: "ak".to_string(),
         trial: "xx".to_string(),
-        purpose: "final".to_string(),
+        branch: "final".to_string(),
         root_path: root.to_path_buf(),
         project_root,
         study: None,
@@ -1641,7 +1644,7 @@ fn creates_the_expected_top_level_tree() {
 }
 
 #[test]
-fn interpolates_the_purpose_into_the_stats_tree() {
+fn interpolates_the_branch_into_the_stats_tree() {
     let tmp = TempDir::new().unwrap();
     let root = scaffold(&tmp);
 
@@ -1799,7 +1802,7 @@ use project_scaffold::{Context, ProjectScaffoldConfig, RawContext, project_scaff
 let context = Context::build(RawContext {
     product: "ak".into(),
     trial: "xx".into(),
-    purpose: "final".into(),
+    branch: "final".into(),
     root_path: "/projects".into(),
     project_root: None,
     study: None,
@@ -1818,7 +1821,7 @@ for a worked example.
 | Field | Meaning |
 | --- | --- |
 | `projectRoot` | where the tree is rooted; accepts `{{ project_root }}` |
-| `directories[].name` | entry name; accepts `{{ product }}`, `{{ trial }}`, `{{ purpose }}`, `{{ study }}`, `{{ root_path }}`, `{{ project_root }}` |
+| `directories[].name` | entry name; accepts `{{ product }}`, `{{ trial }}`, `{{ branch }}`, `{{ study }}`, `{{ root_path }}`, `{{ project_root }}` |
 | `directories[].directory` | `true` for a directory, `false` for a file |
 | `directories[].children` | nested entries |
 | `directories[].reference` | absolute path to a file copied to `name` |

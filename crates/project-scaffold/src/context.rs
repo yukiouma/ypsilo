@@ -11,15 +11,15 @@ use std::{
 /// `String`, `&Path`, or `PathBuf` without converting first. Both parameters default to
 /// the owning types, so existing callers are unaffected.
 ///
-/// `purpose`, `project_root` and `study` are optional: omit them with
+/// `branch`, `project_root` and `study` are optional: omit them with
 /// `..Default::default()`, or start from [`RawContext::new`] and set them with
-/// [`RawContext::with_purpose`], [`RawContext::with_project_root`] and
+/// [`RawContext::with_branch`], [`RawContext::with_project_root`] and
 /// [`RawContext::with_study`].
 #[derive(Debug, Clone, Default)]
 pub struct RawContext<P = PathBuf, S = String> {
     pub product: S,
     pub trial: S,
-    pub purpose: Option<S>,
+    pub branch: Option<S>,
     pub root_path: P,
     pub project_root: Option<P>,
     pub study: Option<S>,
@@ -33,7 +33,7 @@ impl<P, S> RawContext<P, S> {
         Self {
             product,
             trial,
-            purpose: None,
+            branch: None,
             root_path,
             project_root: None,
             study: None,
@@ -41,9 +41,9 @@ impl<P, S> RawContext<P, S> {
         }
     }
 
-    /// Supply an explicit `purpose` instead of leaving it unset.
-    pub fn with_purpose(mut self, purpose: S) -> Self {
-        self.purpose = Some(purpose);
+    /// Supply an explicit `branch` instead of leaving it unset.
+    pub fn with_branch(mut self, branch: S) -> Self {
+        self.branch = Some(branch);
         self
     }
 
@@ -68,7 +68,7 @@ pub struct Context {
     /// Uppercased.
     pub trial: String,
     /// Unchanged, when given.
-    pub purpose: Option<String>,
+    pub branch: Option<String>,
     /// The day the context was built, as `yyyymmdd`.
     pub date: String,
     /// Verified to exist.
@@ -127,7 +127,7 @@ impl Context {
         Ok(Self {
             product,
             trial,
-            purpose: raw.purpose.map(|purpose| purpose.as_ref().to_string()),
+            branch: raw.branch.map(|branch| branch.as_ref().to_string()),
             date,
             root_path,
             project_root,
@@ -138,7 +138,7 @@ impl Context {
 
     /// The variables a config template may reference.
     ///
-    /// `purpose` is only offered when the context carries one, so a template that
+    /// `branch` is only offered when the context carries one, so a template that
     /// names it is left unresolved rather than rendered as an empty string.
     pub fn template_vars(&self) -> HashMap<String, String> {
         let mut vars = HashMap::from([
@@ -156,8 +156,8 @@ impl Context {
             ("study".to_string(), self.study.clone()),
         ]);
 
-        if let Some(purpose) = &self.purpose {
-            vars.insert("purpose".to_string(), purpose.clone());
+        if let Some(branch) = &self.branch {
+            vars.insert("branch".to_string(), branch.clone());
         }
 
         vars
@@ -176,7 +176,7 @@ mod tests {
         RawContext {
             product: "ak".to_string(),
             trial: "xx".to_string(),
-            purpose: Some("final".to_string()),
+            branch: Some("final".to_string()),
             root_path: root.path().to_path_buf(),
             project_root: None,
             study: None,
@@ -199,21 +199,21 @@ mod tests {
     }
 
     #[test]
-    fn leaves_purpose_untouched() {
+    fn leaves_branch_untouched() {
         let dir = TempDir::new().unwrap();
         touch_config(&dir);
         let context = Context::build(raw(&dir)).unwrap();
-        assert_eq!(context.purpose.as_deref(), Some("final"));
+        assert_eq!(context.branch.as_deref(), Some("final"));
     }
 
     #[test]
-    fn keeps_an_absent_purpose_absent() {
+    fn keeps_an_absent_branch_absent() {
         let dir = TempDir::new().unwrap();
         touch_config(&dir);
         let mut input = raw(&dir);
-        input.purpose = None;
+        input.branch = None;
         let context = Context::build(input).unwrap();
-        assert_eq!(context.purpose, None);
+        assert_eq!(context.branch, None);
     }
 
     #[test]
@@ -310,7 +310,7 @@ mod tests {
         let vars = context.template_vars();
         assert_eq!(vars["product"], "AK");
         assert_eq!(vars["trial"], "XX");
-        assert_eq!(vars["purpose"], "final");
+        assert_eq!(vars["branch"], "final");
         assert_eq!(vars["date"], context.date);
         assert_eq!(vars["study"], "AK-XX");
         assert_eq!(vars["root_path"], dir.path().display().to_string());
@@ -321,13 +321,13 @@ mod tests {
     }
 
     #[test]
-    fn omits_purpose_from_the_template_variables_when_it_is_absent() {
+    fn omits_branch_from_the_template_variables_when_it_is_absent() {
         let dir = TempDir::new().unwrap();
         touch_config(&dir);
         let mut input = raw(&dir);
-        input.purpose = None;
+        input.branch = None;
         let context = Context::build(input).unwrap();
-        assert!(!context.template_vars().contains_key("purpose"));
+        assert!(!context.template_vars().contains_key("branch"));
     }
 }
 
@@ -351,7 +351,7 @@ mod generic_path_tests {
         let context = Context::build(RawContext {
             product: "ak".to_string(),
             trial: "xx".to_string(),
-            purpose: Some("final".to_string()),
+            branch: Some("final".to_string()),
             root_path: root.as_str(),
             project_root: None,
             study: None,
@@ -374,7 +374,7 @@ mod generic_path_tests {
         let context = Context::build(RawContext {
             product: "ak".to_string(),
             trial: "xx".to_string(),
-            purpose: Some("final".to_string()),
+            branch: Some("final".to_string()),
             root_path: dir.path().to_str().unwrap().to_string(),
             project_root: Some(explicit.to_str().unwrap().to_string()),
             study: Some("AK-999".to_string()),
@@ -404,7 +404,7 @@ mod generic_str_tests {
         let context = Context::build(RawContext {
             product: "ak",
             trial: "xx",
-            purpose: Some("final"),
+            branch: Some("final"),
             root_path: root.as_str(),
             project_root: None,
             study: None,
@@ -414,7 +414,7 @@ mod generic_str_tests {
 
         assert_eq!(context.product, "AK");
         assert_eq!(context.trial, "XX");
-        assert_eq!(context.purpose.as_deref(), Some("final"));
+        assert_eq!(context.branch.as_deref(), Some("final"));
         assert_eq!(context.study, "AK-XX");
     }
 
@@ -432,7 +432,7 @@ mod generic_str_tests {
         let context = Context::build(RawContext {
             product: "ak",
             trial: "xx",
-            purpose: Some("final"),
+            branch: Some("final"),
             root_path: root.as_str(),
             project_root: Some(explicit.as_str()),
             study: Some("AK-999"),
@@ -467,7 +467,7 @@ mod defaults_tests {
         let context = Context::build(RawContext {
             product: "ak",
             trial: "xx",
-            purpose: Some("final"),
+            branch: Some("final"),
             root_path: root.as_str(),
             config_path: config_path.as_str(),
             ..Default::default()
@@ -504,7 +504,7 @@ mod defaults_tests {
 
         let context = Context::build(
             RawContext::new("ak", "xx", root.as_str(), config_path.as_str())
-                .with_purpose("final")
+                .with_branch("final")
                 .with_study("AK-999")
                 .with_project_root(explicit.to_str().unwrap()),
         )
@@ -518,7 +518,7 @@ mod defaults_tests {
     #[test]
     fn default_raw_context_leaves_optionals_unset() {
         let raw: RawContext = RawContext::default();
-        assert!(raw.purpose.is_none());
+        assert!(raw.branch.is_none());
         assert!(raw.project_root.is_none());
         assert!(raw.study.is_none());
     }
