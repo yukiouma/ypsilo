@@ -2,7 +2,8 @@
 
 - **Date:** 2026-10-19
 - **Status:** Approved (brainstorming)
-- **Revised:** 2026-10-20 — optional `purpose`, null on an unresolved template key, optional node name;
+- **Revised:** 2026-11-06 — `purpose` renamed to `branch`;
+  2026-10-20 — optional `branch`, null on an unresolved template key, optional node name;
   2026-10-20 — `date` template variable, `uppercase` / `lowercase` methods on a placeholder
 - **Owner:** ypsilo / project-scaffold
 
@@ -18,7 +19,7 @@ pub fn project_scaffolding(config: ProjectScaffoldConfig) -> Result<()>
 ```
 
 `ProjectScaffoldConfig` is built from a `Context` that carries the per-study identifiers
-(product, trial, purpose, root path, project root, study) plus the path to the config JSON.
+(product, trial, branch, root path, project root, study) plus the path to the config JSON.
 
 ## 2. Crate layout
 
@@ -45,7 +46,7 @@ dependencies referenced from `[workspace.dependencies]`.
 pub struct Context {
     pub product: String,            // uppercased
     pub trial: String,              // uppercased
-    pub purpose: Option<String>,    // unchanged, when given
+    pub branch: Option<String>,    // unchanged, when given
     pub date: String,               // the current day, as yyyymmdd
     pub root_path: PathBuf,         // must exist
     pub project_root: PathBuf,      // explicit, or derived
@@ -65,8 +66,8 @@ without converting first. Both parameters default to the owning types, so existi
 unaffected. The validated `Context` owns concrete `PathBuf`s and `String`s, so no downstream
 signature is generic.
 
-`purpose` is optional: a study need not have one. `RawContext::new` takes only the required fields,
-and `with_purpose`, `with_project_root` and `with_study` set the optional ones.
+`branch` is optional: a study need not have one. `RawContext::new` takes only the required fields,
+and `with_branch`, `with_project_root` and `with_study` set the optional ones.
 
 ### Normalisation rules
 
@@ -74,7 +75,7 @@ and `with_purpose`, `with_project_root` and `with_study` set the optional ones.
 | -------------- | --------------------------------------------------------------------------- |
 | `product`      | uppercased                                                                   |
 | `trial`        | uppercased                                                                   |
-| `purpose`      | unchanged, and absent when not given                                         |
+| `branch`      | unchanged, and absent when not given                                         |
 | `date`         | the current day, as `yyyymmdd` — set by `Context::build`, not an input       |
 | `root_path`    | must exist, else error                                                       |
 | `project_root` | if `Some`, must exist; if `None`, derive `{root_path}/{product}/{trial}`     |
@@ -131,8 +132,8 @@ every node `name`.
 ## 5. Template substitution
 
 Every `{{ key }}` occurrence in a node `name` (and in `project_root`) is replaced with the
-corresponding context value. Recognised keys: `product`, `trial`, `purpose`, `date`, `root_path`,
-`project_root`, `study`. `purpose` is only recognised when the context carries one.
+corresponding context value. Recognised keys: `product`, `trial`, `branch`, `date`, `root_path`,
+`project_root`, `study`. `branch` is only recognised when the context carries one.
 
 A placeholder may name a **method** to apply to the value it resolves to, after a `|`:
 `{{ study | uppercase }}` splits into the key `study` and the method `uppercase`. The known
@@ -141,8 +142,8 @@ it stands — an unknown method never fails a config. The method applies to the 
 `{{ study | lowercase }} Data Issue Log.xlsx` reads as `ak-xx Data Issue Log.xlsx`.
 
 A key the context does not have leaves the field it appears in **null** rather than half-rendered:
-a name of `"{{ purpose }}"` on a study without a purpose resolves to nothing, and so does
-`"{{ study }} {{ purpose }}.xlsx"` — the whole name is null, not just the one placeholder. The
+a name of `"{{ branch }}"` on a study without a branch resolves to nothing, and so does
+`"{{ study }} {{ branch }}.xlsx"` — the whole name is null, not just the one placeholder. The
 template is either fully resolved or it is not.
 
 `project_root` is the exception: it has no null to fall back to, so an unresolved key there is the
@@ -212,7 +213,7 @@ Unit tests:
   does not exist;
 - `Context::build` setting `date` to the current day as `yyyymmdd`;
 - `Context::build` normalisation: uppercasing, `project_root` derivation, `study` derivation, the
-  optional `purpose`, and each existence-check error;
+  optional `branch`, and each existence-check error;
 - `Node::resolve` leaving a name null when the config omits it or its key is unresolvable;
 - the scaffolding walk skipping a node without a name, and its children with it.
 
@@ -223,4 +224,4 @@ Integration tests (over `tempfile`):
 - `migration` copies the `.sas` files and **not** the `.xlsx` files;
 - a second run over the same directory is a no-op and does not overwrite;
 - a missing reference file produces `ReferenceNotFound`;
-- a context without a purpose leaves the `{{ purpose }}` branch out of the tree.
+- a context without a branch leaves the `{{ branch }}` branch out of the tree.

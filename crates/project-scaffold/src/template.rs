@@ -111,7 +111,7 @@ mod tests {
     fn vars() -> HashMap<String, String> {
         HashMap::from([
             ("study".to_string(), "AK-001".to_string()),
-            ("purpose".to_string(), "final".to_string()),
+            ("branch".to_string(), "final".to_string()),
             ("product".to_string(), "Ak-001".to_string()),
         ])
     }
@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn substitutes_several_placeholders_in_one_template() {
         assert_eq!(
-            render("{{ study }}-{{ purpose }}", &vars()),
+            render("{{ study }}-{{ branch }}", &vars()),
             Some("AK-001-final".to_string())
         );
     }

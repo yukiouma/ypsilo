@@ -11,7 +11,7 @@ use project_scaffold::{Context, ProjectScaffoldConfig, RawContext, project_scaff
 let context = Context::build(RawContext {
     product: "ak",
     trial: "xx",
-    purpose: Some("final"),
+    branch: Some("final"),
     root_path: "/projects",
     config_path: "/etc/project-scaffold/config.json",
     ..Default::default()
@@ -21,13 +21,13 @@ let config = ProjectScaffoldConfig::build(&context)?;
 project_scaffolding(config)?;
 ```
 
-`purpose`, `project_root` and `study` are optional. Omit them with `..Default::default()` as above,
+`branch`, `project_root` and `study` are optional. Omit them with `..Default::default()` as above,
 or use the constructor and fluent setters:
 
 ```rust
 let context = Context::build(
     RawContext::new("ak", "xx", "/projects", "/etc/project-scaffold/config.json")
-        .with_purpose("final")
+        .with_branch("final")
         .with_study("AK-999"),
 )?;
 ```
@@ -40,7 +40,7 @@ types, so `PathBuf`/`String` callers are unaffected. The validated `Context` it 
 `Context::build` normalises its input: `product` and `trial` are uppercased, `study` defaults to
 `{PRODUCT}-{TRIAL}`, `project_root` defaults to `{root_path}/{product}/{trial}` in lower case, and
 `date` is set to the current day as `yyyymmdd` (e.g. `20260101`). `root_path`, an explicit
-`project_root`, and `config_path` must already exist. `purpose` is kept as given, and stays absent
+`project_root`, and `config_path` must already exist. `branch` is kept as given, and stays absent
 when the context carries none.
 
 ## Configuration
@@ -51,15 +51,15 @@ for a worked example.
 | Field | Meaning |
 | --- | --- |
 | `projectRoot` | where the tree is rooted; accepts `{{ project_root }}` |
-| `directories[].name` | entry name; accepts `{{ product }}`, `{{ trial }}`, `{{ purpose }}`, `{{ study }}`, `{{ date }}`, `{{ root_path }}`, `{{ project_root }}` |
+| `directories[].name` | entry name; accepts `{{ product }}`, `{{ trial }}`, `{{ branch }}`, `{{ study }}`, `{{ date }}`, `{{ root_path }}`, `{{ project_root }}` |
 | `directories[].directory` | `true` for a directory, `false` for a file |
 | `directories[].children` | nested entries |
 | `directories[].reference` | absolute path to a file copied to `name` |
 | `directories[].migration.directory` | absolute path to a source directory |
 | `directories[].migration.filter` | include-list of extensions, each with a leading dot |
 
-`{{ purpose }}` is only available when the context carries a purpose. A name that names a key the
-context does not have — `{{ purpose }}` without a purpose, say — is left unresolved, and so is any
+`{{ branch }}` is only available when the context carries a branch. A name that names a key the
+context does not have — `{{ branch }}` without a branch, say — is left unresolved, and so is any
 name that mixes it with other text: the whole name becomes null and the entry is skipped. A name
 omitted from the config is skipped the same way. `projectRoot` has no such luxury: an unresolved
 key there is an error, since a scaffold needs a root to build into.

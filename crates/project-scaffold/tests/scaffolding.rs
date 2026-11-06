@@ -14,7 +14,7 @@ use std::{
 };
 use tempfile::TempDir;
 
-/// The fixture tree: a `documents` branch, a `stats` branch holding a `{{ purpose }}`
+/// The fixture tree: a `documents` branch, a `stats` branch holding a `{{ branch }}`
 /// directory, and a macro migration that must pick `.sas` files and skip `.xlsx`.
 fn fixture_config(references: &Path) -> serde_json::Value {
     json!({
@@ -77,7 +77,7 @@ fn fixture_config(references: &Path) -> serde_json::Value {
                 "directory": true,
                 "children": [
                     {
-                        "name": "{{ purpose }}",
+                        "name": "{{ branch }}",
                         "directory": true,
                         "children": [
                             {
@@ -185,7 +185,7 @@ impl Fixture {
         RawContext {
             product: "ak".to_string(),
             trial: "xx".to_string(),
-            purpose: Some("final".to_string()),
+            branch: Some("final".to_string()),
             root_path: self.root.path().to_path_buf(),
             project_root,
             study: None,
@@ -235,11 +235,11 @@ fn creates_the_nested_directory_tree() {
 }
 
 #[test]
-fn interpolates_purpose_and_study_into_directory_and_file_names() {
+fn interpolates_branch_and_study_into_directory_and_file_names() {
     let fixture = Fixture::new();
     let root = fixture.scaffold();
 
-    // `{{ purpose }}` names a whole branch of the tree.
+    // `{{ branch }}` names a whole branch of the tree.
     assert!(
         root.join("stats")
             .join("final")
@@ -306,16 +306,16 @@ fn stamps_the_current_date_into_a_directory_name() {
 }
 
 #[test]
-fn skips_the_purpose_branch_when_the_context_carries_no_purpose() {
+fn skips_the_branch_when_the_context_carries_none() {
     let fixture = Fixture::new();
     let mut raw = fixture.raw_context(None);
-    raw.purpose = None;
+    raw.branch = None;
 
     let context = Context::build(raw).unwrap();
     let project_root = context.project_root.clone();
     project_scaffolding(ProjectScaffoldConfig::build(&context).unwrap()).unwrap();
 
-    // The `{{ purpose }}` branch has no value to resolve to, so it is left out —
+    // The `{{ branch }}` branch has no value to resolve to, so it is left out —
     // the rest of the tree is unaffected.
     assert!(project_root.join("stats").join("cutoff").is_dir());
     assert!(!project_root.join("stats").join("final").exists());
@@ -420,7 +420,7 @@ fn reports_a_missing_reference_file() {
     let context = Context::build(RawContext {
         product: "ak".to_string(),
         trial: "xx".to_string(),
-        purpose: Some("final".to_string()),
+        branch: Some("final".to_string()),
         root_path: root.path().to_path_buf(),
         project_root: None,
         study: None,
@@ -459,7 +459,7 @@ fn reports_a_missing_migration_directory() {
     let context = Context::build(RawContext {
         product: "ak".to_string(),
         trial: "xx".to_string(),
-        purpose: Some("final".to_string()),
+        branch: Some("final".to_string()),
         root_path: root.path().to_path_buf(),
         project_root: None,
         study: None,
